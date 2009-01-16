@@ -1,0 +1,641 @@
+//
+// C++ Implementation: jinke/lbook V3 viewer plugin
+//
+// Description: 
+//
+//
+// Author: Vadim Lopatin <vadim.lopatin@coolreader.org>, (C) 2008
+//
+// Copyright: See COPYING file that comes with this distribution
+//
+//
+
+#include <unistd.h>
+#include <sys/wait.h>
+#include "cr3jinke.h"
+#include <crengine.h>
+#include <crgui.h>
+#include "cr3main.h"
+#include "mainwnd.h"
+
+// uncomment following line to allow running executables named .exe.txt
+#define ALLOW_RUN_EXE 1
+// uncomment to use separate .ini files for different formats
+#define SEPARATE_INI_FILES 1
+
+status_info_t lastState = {0,0,0};
+static CallbackFunction * v3_callbacks = NULL;
+
+static char last_bookmark[2048]= {0};
+static int last_bookmark_page = 0;
+
+int getBatteryState()
+{
+#if USE_OWN_BATTERY_TEST==0
+    lastState.batteryState = v3_callbacks->GetBatteryState();
+    if ( lastState.batteryState >=0 && lastState.batteryState <=4 )
+        return lastState.batteryState * 100 / 4;
+    return 100;
+#else
+    FILE * f = fopen( "/dev/misc/s3c2410_batt", "rb" );
+    if ( !f )
+        return -1;
+    int ch = fgetc( f );
+    fclose(f);
+    if ( ch == ' ' )
+        return -1;
+    if ( ch>=0 && ch <= 16 )
+        return ch * 100 / 16;
+    return 100;
+#endif
+}
+
+void SetCallbackFunction(struct CallbackFunction *cb)
+{
+    CRLog::trace("SetCallbackFunction()");
+    v3_callbacks = cb;
+    lastState.batteryState = v3_callbacks->GetBatteryState();
+}
+
+/// WXWidget support: draw to wxImage
+class CRJinkeScreen : public CRGUIScreenBase
+{
+    public:
+        static CRJinkeScreen * instance;
+    protected:
+        virtual void update( const lvRect & rc, bool full )
+        {
+            CRLog::debug("CRJinkeScreen::update()");
+
+            v3_callbacks->BlitBitmap( 0, 0, 600, 800, 0, 0, 600, 800, (unsigned char *)_front->GetScanLine(0) );
+            //v3_callbacks->PartialPrint();
+            v3_callbacks->PartialPrint();
+        }
+    public:
+        virtual ~CRJinkeScreen()
+        {
+            instance = NULL;
+        }
+        CRJinkeScreen( int width, int height )
+        :  CRGUIScreenBase( width, height, true )
+        {
+            instance = this;
+        }
+};
+CRJinkeScreen * CRJinkeScreen::instance = NULL;
+
+
+class CRJinkeWindowManager : public CRGUIWindowManager
+{
+protected:
+public:
+    /// translate string by key, return default value if not found
+    virtual lString16 translateString( const char * key, const char * defValue )
+    {
+        CRLog::trace("Translate(%s)", key);
+        lString16 res;
+        //static char buf[2048];
+        const char * res8 = v3_callbacks->GetString( (char *)key );
+        if ( res8 && res8[0] ) {
+            CRLog::trace("   found(%s)", res8);
+            res = Utf8ToUnicode( lString8(res8) );
+        } else {
+            CRLog::trace("   not found");
+            res = Utf8ToUnicode( lString8(defValue) );
+        }
+        return res;
+    }
+    static CRJinkeWindowManager * instance;
+    CRJinkeWindowManager( int dx, int dy )
+    : CRGUIWindowManager(NULL)
+    {
+        CRJinkeScreen * s = new CRJinkeScreen( dx, dy );
+        _screen = s;
+        _ownScreen = true;
+        instance = this;
+    }
+    // runs event loop
+    virtual int runEventLoop()
+    {
+        return 0; // NO EVENT LOOP AVAILABLE
+    }
+    bool doCommand( int cmd, int params )
+    {
+        if ( !onCommand( cmd, params ) )
+            return false;
+        update( true );
+        return true;
+    }
+};
+
+CRJinkeWindowManager * CRJinkeWindowManager::instance = NULL;
+V3DocViewWin * main_win = NULL;
+
+class CRJinkeDocView : public V3DocViewWin {
+public:
+    static CRJinkeDocView * instance;
+    CRJinkeDocView( CRGUIWindowManager * wm, lString16 dataDir ) 
+    : V3DocViewWin( wm, dataDir )
+    {
+        instance = this;
+    }
+    virtual void closing()
+    {
+        strcpy( last_bookmark, GetCurrentPositionBookmark() );
+        last_bookmark_page = CRJinkeDocView::instance->getDocView()->getCurPage();
+    }
+    virtual ~CRJinkeDocView()
+    {
+        instance = NULL;
+    }
+};
+CRJinkeDocView * CRJinkeDocView::instance = NULL;
+
+/**
+* Call this function on final (non submenu) menu item selection.
+*
+* actionId - id of menu action. Set of standard actions should be defined in SDK header file. 
+*            Some range should be reserved for plugin items.
+*            E.g. 1..999 for standard, Viewer-defined actions
+*                 1000-1999 reserved for plugins
+*
+* If return value is 1, this means that action has been processed in plugin and viewer should flush the screen.
+* If return value is 2, this means that action has been processed in plugin and no more processing is required.
+* If return value is 0, or no such function defined in plugin, default processing should be done by Viewer.
+*/
+int OnMenuAction( int actionId )
+{
+    CRLog::trace("OnMenuAction(%d)", actionId);
+    return 0; // STUB
+}
+
+
+/**
+* Call this function on key press.
+*
+* keyId - id of key. Key codes should be defined somewhere in SDK header file.
+* state - the viewer state while received the key
+*
+* If return value is 1, this means that key has been processed in plugin and viewer should flush the screen.
+* If return value is 2, this means that key has been processed in plugin and no more processing is required.
+* If return value is 0, or no such function defined in plugin, default processing should be done by Viewer.
+*/
+int OnKeyPressed(int keyId, int state)
+{
+    CRLog::debug("OnKeyPressed(%d, %d)", keyId, state);
+#if 0
+    FILE * f = fopen("/root/abook/keys.log","at");
+    if ( f ) {
+        fprintf(f,"key = %d \t  (%d) \n", keyId, state);
+        fclose(f);
+    }
+#endif
+    if ( keyId & 128 )
+        return 2; // to ignore UP event after long keypress
+    if ( state != CUSTOMIZESTATE )
+        v3_callbacks->BeginDialog();
+    static int convert_table[] = {
+    KEY_0, '0', 0,
+    KEY_1, '1', 0,
+    KEY_2, '2', 0,
+    KEY_3, '3', 0,
+    KEY_4, '4', 0,
+    KEY_5, '5', 0,
+    KEY_6, '6', 0,
+    KEY_7, '7', 0,
+    KEY_8, '8', 0,
+    KEY_9, '9', 0,
+    LONG_KEY_0, '0', KEY_FLAG_LONG_PRESS,
+    LONG_KEY_1, '1', KEY_FLAG_LONG_PRESS,
+    LONG_KEY_2, '2', KEY_FLAG_LONG_PRESS,
+    LONG_KEY_3, '3', KEY_FLAG_LONG_PRESS,
+    LONG_KEY_4, '4', KEY_FLAG_LONG_PRESS,
+    LONG_KEY_5, '5', KEY_FLAG_LONG_PRESS,
+    LONG_KEY_6, '6', KEY_FLAG_LONG_PRESS,
+    LONG_KEY_7, '7', KEY_FLAG_LONG_PRESS,
+    LONG_KEY_8, '8', KEY_FLAG_LONG_PRESS,
+    LONG_KEY_9, '9', KEY_FLAG_LONG_PRESS,
+    KEY_CANCEL, XK_Escape, 0,
+    KEY_OK, XK_Return, 0,
+    KEY_DOWN, XK_Down, 0,
+    KEY_UP, XK_Up, 0,
+    LONG_KEY_CANCEL, XK_Escape, KEY_FLAG_LONG_PRESS,
+    LONG_KEY_OK, XK_Return, KEY_FLAG_LONG_PRESS,
+    LONG_KEY_DOWN, XK_Down, KEY_FLAG_LONG_PRESS,
+    LONG_KEY_UP, XK_Up, KEY_FLAG_LONG_PRESS,
+    KEY_SHORTCUT_VOLUME_UP, '+', 0,
+    KEY_SHORTCUT_VOLUME_DOWN, '-', 0,
+    LONG_SHORTCUT_KEY_VOLUMN_UP, '+', KEY_FLAG_LONG_PRESS,
+    LONG_SHORTCUT_KEY_VOLUMN_DOWN, '-', KEY_FLAG_LONG_PRESS,
+    0, 0, 0 // end marker
+    };
+    int code = 0;
+    int flags = 0;
+    for ( int i=0; convert_table[i]; i+=3 ) {
+        if ( keyId==convert_table[i] ) {
+            code = convert_table[i+1];
+            flags = convert_table[i+2];
+            CRLog::debug( "OnKeyPressed( %d (%04x) ) - converted to %04x, %d", keyId, keyId, code, flags );
+        }
+    }
+    if ( !code ) {
+        CRLog::debug( "Unknown key code in OnKeyPressed() : %d (%04x)", keyId, keyId );
+        return 0;
+    }
+    CRJinkeWindowManager::instance->onKeyPressed( code, flags );
+    CRJinkeWindowManager::instance->processPostedEvents();
+    CRJinkeWindowManager::instance->update( true );
+
+    if ( CRJinkeWindowManager::instance->getWindowCount()==0 ) {
+        // QUIT
+        CRLog::trace("windowCount==0, quitting");
+        v3_callbacks->EndDialog();
+        return 0;
+    }
+    return 2;
+
+}
+
+const char * GetCurrentPositionBookmark()
+{
+    if ( !CRJinkeDocView::instance )
+        return last_bookmark;
+    CRLog::trace("GetCurrentPositionBookmark()");
+    ldomXPointer ptr = main_win->getDocView()->getBookmark();
+    lString16 bmtext( !ptr ? L"" : ptr.toString() );
+    static char buf[1024];
+    strcpy( buf, UnicodeToUtf8( bmtext ).c_str() );
+    CRLog::trace("   return bookmark=%s", buf);
+    return buf;
+}
+
+/**
+* Get page number by bookmark.
+*/
+int GetBookmarkPage( const char * bookmark )
+{
+    CRLog::trace("GetBookmarkPage(%s)", bookmark);
+    if ( !CRJinkeDocView::instance )
+        return last_bookmark_page;
+    ldomXPointer bm =  CRJinkeDocView::instance->getDocView()->getDocument()->createXPointer(Utf8ToUnicode(lString8(bookmark)));
+    return CRJinkeDocView::instance->getDocView()->getBookmarkPage(bm);
+}
+
+/**
+* Call this function to return to stored bookmark's position.
+*/
+void GoToBookmark( const char * bookmark )
+{
+    CRLog::trace("GoToBookmark(%s)", bookmark);
+    ldomXPointer bm = main_win->getDocView()->getDocument()->createXPointer(Utf8ToUnicode(lString8(bookmark)));
+    if ( !bm.isNull() )
+        main_win->getDocView()->goToBookmark(bm);
+}
+
+
+/**
+* Get page bookmark description.
+*/
+unsigned short * szGetVoiceDataBlock( int iPage, int * numBytes, int * encodingType )
+{
+    LVDocView * _docview = main_win->getDocView();
+    CRLog::trace("szGetVoiceDataBlock(%d)", iPage);
+    lString16 text;
+    ldomXPointer bm = _docview->getPageBookmark( iPage );
+    if ( !bm.isNull() ) {
+        lString16 titleText;
+        lString16 posText;
+        _docview->getBookmarkPosText( bm, titleText, posText );
+        text = titleText;
+        if ( !posText.empty() && !titleText.empty() )
+            text += L" \n";
+        text += posText;
+    }
+    if ( text.empty() ) {
+        text = L"";
+        LVRendPageList * pages = _docview->getPageList();
+        int percent = 0;
+        if ( iPage>=0 && iPage<pages->length() ) {
+            percent = ( iPage * 100 ) / pages->length()-1;
+        }
+        text = lString16::itoa(percent);
+        text += L"%";    
+    }
+    *encodingType = 2;
+    *numBytes = text.length(); // * 2;
+    unsigned short * buf = ( unsigned short *) malloc( ( text.length() + 1 ) * sizeof(unsigned short ) );
+    int i=0;
+    for ( const lChar16 * str = text.c_str(); (buf[i++] = *str++) != 0; ) {
+    }
+    CRLog::trace(" return : \"%s\"\n", UnicodeToUtf8(text).c_str() );
+    return buf; // caller should free this buffer
+}
+
+
+
+int OnStatusInfoChange( status_info_t * statusInfo, myRECT * rectToUpdate )
+{
+    bool bookmarkChanged = ( lastState.bookmarkLabelFlags!=statusInfo->bookmarkLabelFlags ||
+         lastState.currentBookmarkFlags!=statusInfo->currentBookmarkFlags );
+    bool batteryChanged = ( lastState.batteryState!=statusInfo->batteryState );
+    memcpy( &lastState, statusInfo, sizeof( lastState ) );
+    CRLog::trace("OnStatusInfoChange(bookmarks=%x, battery=%d)", statusInfo->bookmarkLabelFlags, statusInfo->batteryState);
+    if ( !bookmarkChanged && !batteryChanged )
+        return 0;
+    // Return 0 always, ignore Jinke status
+    return 0;
+}
+
+
+const char * GetAboutInfoText()
+{
+    LVDocView * _docview = main_win->getDocView();
+    CRLog::trace("GetAboutInfoText()");
+    lString16 authors = _docview->getAuthors();
+    lString16 title = _docview->getTitle();
+    lString16 series = _docview->getSeries();
+    lString16 text;
+    static char about_text[10000];
+    if ( !authors.empty() ) {
+        text << L"Author(s):     " << authors << L"\n";
+    }
+    if ( !title.empty() ) {
+        text << L"Title:     " << title << L"\n";
+    }
+    if ( !series.empty() ) {
+        text << L"Series:     " << series << L"\n";
+    }
+    lString16 crengineVersion = Utf8ToUnicode(lString8(CR_ENGINE_VERSION));
+    text << L"CoolReader:    " << crengineVersion << L"\n";
+
+    lStr_cpy( about_text, UnicodeToUtf8( text ).c_str() );
+    return about_text;
+}
+
+
+int InitDoc(char *fileName)
+{
+    CRLog::trace("InitDoc()");
+#ifdef __i386__
+    //CRLog::setFileLogger("/root/abook/crengine.log");
+    CRLog::setStdoutLogger();
+    CRLog::setLogLevel(CRLog::LL_TRACE);
+#else
+    //InitCREngineLog(NULL);
+    InitCREngineLog("/root/abook/crengine/crlog.ini");
+#endif
+
+    lString16Collection fontDirs;
+    fontDirs.add( lString16(L"/root/abook/fonts") ); 
+    //fontDirs.add( lString16(L"/root/crengine/fonts") ); // will be added
+    CRLog::info("INIT...");
+    if ( !InitCREngine( "/root/crengine/", fontDirs ) )
+        return 0;
+
+
+
+#ifdef ALLOW_RUN_EXE
+    {
+        __pid_t pid;
+        if( strstr(fileName, ".exe.txt") || strstr(fileName, ".exe.fb2")) {
+            pid = fork();
+            if(!pid) {
+                execve(fileName, NULL, NULL);
+                exit(0);
+            } else {
+                waitpid(pid, NULL, 0);
+                exit(0);
+                //return 0;
+            }
+        }
+    }
+#endif
+    {
+        CRLog::trace("creating window manager...");
+        CRJinkeWindowManager * wm = new CRJinkeWindowManager(600,800);
+        //main_win = new V3DocViewWin( wm, lString16(CRSKIN) );
+        CRLog::trace("creating main window...");
+        main_win = new CRJinkeDocView( wm, lString16(L"/root/crengine") );
+        CRLog::trace("setting colors...");
+        main_win->getDocView()->setBackgroundColor(0xFFFFFF);
+        main_win->getDocView()->setTextColor(0x000000);
+        main_win->getDocView()->setFontSize( 20 );
+        if ( !main_win->loadDefaultCover( lString16( L"/root/abook/crengine/cr3_def_cover.png" ) ) )
+            main_win->loadDefaultCover( lString16( L"/root/crengine/cr3_def_cover.png" ) );
+        if ( !main_win->loadCSS(  lString16( L"/root/abook/crengine/fb2.css" ) ) )
+            main_win->loadCSS( lString16( L"/root/crengine/fb2.css" ) );
+        if ( !main_win->loadSkin(  lString16( L"/root/abook/crengine/skin" ) ) )
+            main_win->loadSkin( lString16( L"/root/crengine/skin" ) );
+
+        CRLog::trace("choosing init file...");
+        const lChar16 * ini_fname = L"cr3.ini";
+    #ifdef SEPARATE_INI_FILES
+        if ( strstr(fileName, ".txt")!=NULL || strstr(fileName, ".tcr")!=NULL) {
+            ini_fname = L"cr3-txt.ini";
+        } else if ( strstr(fileName, ".rtf")!=NULL ) {
+            ini_fname = L"cr3-rtf.ini";
+        } else if ( strstr(fileName, ".htm")!=NULL ) {
+            ini_fname = L"cr3-htm.ini";
+        } else if ( strstr(fileName, ".epub")!=NULL ) {
+            ini_fname = L"cr3-epub.ini";
+        } else {
+            ini_fname = L"cr3-fb2.ini";
+        }
+    #endif
+        static const lChar16 * dirs[] = {
+            L"/root/abook/crengine/",
+            L"/home/crengine/",
+            L"/root/appdata/",
+            NULL
+        };
+        int i;
+        CRLog::debug("Loading settings...");
+        lString16 ini;
+        for ( i=0; dirs[i]; i++ ) {
+            ini = lString16(dirs[i]) + ini_fname;
+            if ( main_win->loadSettings( ini ) ) {
+                break;
+            }
+        }
+        CRLog::debug("settings at %s", UnicodeToUtf8(ini).c_str() );
+//        if ( !main_win->loadSkin(lString16(L"/root/abook/crengine/skins/default.c3s") )
+  //          main_win->loadSkin(lString16(L"/root/crengine/skins/default.c3s");
+        static const int acc_table[] = {
+            '8', 0, MCMD_SETTINGS_FONTSIZE, 0,
+            '8', 1, MCMD_SETTINGS_ORIENTATION, 0,
+            XK_Escape, 0, MCMD_QUIT, 0,
+            XK_Return, 0, MCMD_MAIN_MENU, 0,
+            XK_Return, 1, MCMD_SETTINGS, 0,
+            '0', 0, DCMD_PAGEDOWN, 0,
+            XK_Down, 0, DCMD_PAGEDOWN, 0,
+            XK_Down, KEY_FLAG_LONG_PRESS, DCMD_PAGEDOWN, 10,
+            XK_Up, 0, DCMD_PAGEUP, 0,
+            XK_Up, KEY_FLAG_LONG_PRESS, DCMD_PAGEUP, 10,
+            '9', 0, DCMD_PAGEUP, 0,
+#ifdef WITH_DICT
+            '2', 0, MCMD_DICT, 0,
+#endif
+            '+', 0, DCMD_ZOOM_IN, 0,
+            '=', 0, DCMD_ZOOM_IN, 0,
+            '-', 0, DCMD_ZOOM_OUT, 0,
+            '_', 0, DCMD_ZOOM_OUT, 0,
+            0
+        };
+        main_win->setAccelerators( CRGUIAcceleratorTableRef( new CRGUIAcceleratorTable( acc_table ) ) );
+        wm->activateWindow( main_win );
+        if ( !main_win->getDocView()->LoadDocument(fileName) ) {
+            printf("Cannot open book file %s\n", fileName);
+            delete wm;
+            return 0;
+        } else {
+        }
+    }
+
+    //_docview->setVisiblePageCount( 1 );
+
+
+
+    //tocDebugDump( _docview->getToc() );
+
+    return 1;
+}
+
+
+// stubs
+int IsStandardStatusBarVisible() { return 0; }
+#ifdef NANO_X
+void vSetDisplayState(Apollo_State*state) { }
+#endif
+
+void vSetCurPage(int index)
+{
+    CRLog::trace("vSetCurPage(%d)", index);
+    if ( index < 0 ){
+        index = 0;
+    }
+    if ( index<0 || index>CRJinkeDocView::instance->getDocView()->getPageCount() )
+        return;
+    CRJinkeWindowManager::instance->doCommand( DCMD_GO_PAGE, index );
+}
+int bGetRotate() { return 0; }
+void vSetRotate(int rot) { }
+void vGetTotalPage(int*iTotalPage)
+{
+    *iTotalPage = CRJinkeDocView::instance->getDocView()->getPageCount();
+}
+int GetPageIndex()
+{
+    CRLog::trace("GetPageIndex()");
+    return CRJinkeDocView::instance->getDocView()->getCurPage(); //pageNo
+}
+int Origin() { return 1; }
+void vFontBigger() { }
+int Bigger() { return 0; }
+int Smaller() { return 0; }
+int Rotate() { return 0; }
+int Fit() { return 0; }
+int Prev() { return 0; }
+int Next() { return 0; }
+int GotoPage(int index)
+{
+    CRLog::trace("GotoPage(%d)", index);
+    if ( index<0 || index>CRJinkeDocView::instance->getDocView()->getPageCount() )
+        return 0;
+    CRJinkeWindowManager::instance->doCommand( DCMD_GO_PAGE, index );
+    return 1;
+}
+void Release() { }
+
+void GetPageDimension(int *width, int *height)
+{
+    *width = 600;
+    *height = 800;
+}
+
+void SetPageDimension(int width, int height) { }
+double dGetResizePro() { return 1.0; }
+void vSetResizePro(double dSetPro) { }
+
+void GetPageData(void **data)
+{
+    //TODO:
+    CRLog::trace("GetPageData() enter");
+    //_docview->setBatteryState( ::getBatteryState() );
+    //_docview->Draw();
+    //LVDocImageRef pageImage = _docview->getPageImage(0);
+    CRJinkeWindowManager::instance->update( true );
+    LVRef<LVDrawBuf> pageImage = CRJinkeWindowManager::instance->getScreen()->getCanvas();
+    LVDrawBuf * drawbuf = pageImage.get();
+    *data = drawbuf->GetScanLine(0);
+    CRLog::trace("GetPageData() exit");
+    //*data = _docview->GetDrawBuf()->GetScanLine(0);
+}
+
+int GetPageNum()
+{
+    return 1; //_docview->;
+}
+void bGetUserData(void **vUserData, int *iUserDataLength)
+{
+    CRLog::trace("bGetUserData()");
+    static int testData[] = {1, 2, 3, 4};
+    //testData[0] = _docview ? _docview->getFontSize() : fontSize;
+    *vUserData = testData;
+    *iUserDataLength = 4;
+}
+void vSetUserData(void *vUserData, int iUserDataLength)
+{
+    CRLog::trace("vSetUserData()");
+}
+int iGetDocPageWidth()
+{
+    return 600;
+}
+int iGetDocPageHeight()
+{
+    return 800;
+}
+unsigned short usGetLeftBarFlag() { return 4; }
+void   vEndInit(int iEndStyle)
+{
+    CRLog::trace("vEndInit()");
+}
+
+void   vEndDoc()
+{
+    CRLog::trace("vEndDoc()");
+    CRLog::trace("uniniting CREngine");
+    ShutdownCREngine();
+}
+
+int  iInitDocF(char *filename,int pageNo, int flag)
+{
+    return 0;
+}
+void   vFirstBmp(char *fileName, int pageNo) { } 
+/// returns number of doc page for entry
+//int   iGetCurDirPage(int level, int idx)
+int iGetCurDirPage(int idx, int level) { return 1; }
+/// initializes the directory
+int iCreateDirList() { return 0; }
+/// returns number of entries for current directory entry
+int iGetDirNumber() { return 0; }
+unsigned short* usGetCurDirNameAndLen(int pos, int * len)
+{
+    *len = 1;
+    static unsigned short buf[2]={'a', 0 };
+    return buf; //(unsigned short *) L"dir entry\x0420";
+}
+unsigned short* usGetCurDirName(int level, int index)
+{
+    return (unsigned short *) L"dir entry\x0420";
+}
+int iGetCurDirLen(int level, int index) { return 11; }
+void   vClearAllDirList() { }
+/// return 1 for page of document, 0 for URL, image, etc...
+int OpenLeaf( int pos ) { return 1; }
+/// returns 1 for shortcut, 0 for subdir
+int  bCurItemIsLeaf(int pos) { return 1; }
+void vEnterChildDir(int pos) { }
+void vReturnParentDir() { }
+void vFreeDir() { }
