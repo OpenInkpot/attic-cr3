@@ -1,0 +1,5 @@
+debian/cr3/usr/bin/cr3
+debian/cr3/usr/share/crengine/skin/*
+debian/cr3/usr/share/crengine/hyph/*
+debian/cr3/usr/share/crengine/*.css
+
