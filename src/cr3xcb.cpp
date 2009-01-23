@@ -466,13 +466,13 @@ int main(int argc, char **argv)
         main_win->getDocView()->setBackgroundColor(0xFFFFFF);
         main_win->getDocView()->setTextColor(0x000000);
         main_win->getDocView()->setFontSize( 20 );
-        if ( !main_win->loadDefaultCover( lString16( L"/mnt/crengine/cr3_def_cover.png" ) ) )
+        if ( !main_win->loadDefaultCover( lString16( L"/media/sd/crengine/cr3_def_cover.png" ) ) )
             main_win->loadDefaultCover( lString16( L"/usr/share/crengine/cr3_def_cover.png" ) );
-        if ( !main_win->loadCSS(  lString16( L"/mnt/crengine/fb2.css" ) ) )
+        if ( !main_win->loadCSS(  lString16( L"/media/sd/crengine/fb2.css" ) ) )
             main_win->loadCSS( lString16( L"/usr/share/crengine/fb2.css" ) );
-        if ( !main_win->loadSkin(  lString16( L"/mnt/crengine/skin" ) ) )
+        if ( !main_win->loadSkin(  lString16( L"/media/sd/crengine/skin" ) ) )
             main_win->loadSkin( lString16( L"/usr/share/crengine/skin" ) );
-        if ( !main_win->loadDictConfig(  lString16( L"/mnt/crengine/dict/dictd.conf" ) ) )
+        if ( !main_win->loadDictConfig(  lString16( L"/media/sd/crengine/dict/dictd.conf" ) ) )
             main_win->loadDictConfig( lString16( L"/usr/share/crengine/dict/dictd.conf" ) );
 
     #define SEPARATE_INI_FILES
@@ -495,7 +495,7 @@ int main(int argc, char **argv)
         lString16 home = Utf8ToUnicode(lString8(( getenv("HOME") ) ));
         lString16 homecrengine = home + L"/.crengine/";
         const lChar16 * dirs[] = {
-            L"/mnt/crengine/",
+            L"/media/sd/crengine/",
             homecrengine.c_str(),
             NULL
         };
