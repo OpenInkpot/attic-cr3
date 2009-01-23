@@ -1,3 +1,10 @@
+cr3 (3.0.17-3) unstable; urgency=low
+
+  * fontconfig support
+  * /mnt -> /media/sd 
+
+ -- Alexander Kerner <lunohod@openinkpot.org>  Fri, 23 Jan 2009 14:39:36 +0000
+
 cr3 (3.0.17-2) unstable; urgency=low
 
   * Added saving of last position, battery indication, keymap fixes.
