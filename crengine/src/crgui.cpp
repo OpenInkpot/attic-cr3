@@ -410,18 +410,13 @@ void CRMenu::Draw( LVDrawBuf & buf, int x, int y )
                        UnicodeToUtf8(getPropName()).c_str()
                        , "")==(_items[i]->getPropValue()) )
             selected = true;
-
+        if ( selected )
+            CRLog::trace("Menu: item %d is selected", index );
         rc.bottom = rc.top + itemSize.y;
 		CRRectSkinRef is = selected ? itemSelSkin : itemSkin;
 		CRRectSkinRef ss = selected ? itemSelShortcutSkin : itemShortcutSkin;
-        if ( selected ) {
-            lvRect sel = rc;
-            sel.extend( 4 );
-			//buf.FillRect(sel, itemSelSkin->getBackgroundColor() );
-        }
         // number
         lvRect numberRc( rc );
-        //numberRc.extend(ITEM_MARGIN/4); //ITEM_MARGIN/8-2);
         numberRc.right = numberRc.left + HOTKEY_SIZE;
 
         ss->draw( buf, numberRc );
