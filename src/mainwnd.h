@@ -22,7 +22,6 @@
 #define WITH_DICT
 #endif
 
-#define KEY_FLAG_LONG_PRESS 1
 
 #ifdef _WIN32
 #define XK_Return   0xFF01
@@ -60,9 +59,7 @@ enum CRMainMenuCmd
 	MCMD_GO_LINK_APPLY,
 	MCMD_LONG_FORWARD,
 	MCMD_LONG_BACK,
-#ifdef WITH_DICT
     MCMD_DICT,
-#endif
 };
 
 class V3DocViewWin : public CRDocViewWindow
