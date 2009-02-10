@@ -63,6 +63,18 @@ protected:
         return -1;
     }
 public:
+    void dump()
+    {
+        if ( CRLog::isTraceEnabled() ) {
+#if 0
+            CRLog::trace("Accelerator table:");
+            for ( int i=0; i<_items.length(); i++ ) {
+                CRGUIAccelerator * p = _items[i];
+                CRLog::trace("%d, %d => %d, %d\n", p->keyCode, p->keyFlags, p->commandId, p->commandParam);
+            }
+#endif
+        }
+    }
 	/// returns number of entries
 	unsigned length() { return _items.length(); }
     /// remove accelerator from table
@@ -767,16 +779,9 @@ class CRDocViewWindow : public CRGUIWindowBase
         virtual void setRect( const lvRect & rc );
 
         /// returns true if command is processed
-        virtual bool onCommand( int command, int params )
-        {
-            if ( command >= LVDOCVIEW_COMMANDS_START && command <= LVDOCVIEW_COMMANDS_END ) {
-                _docview->doCommand( (LVDocCmd)command, params );
-                _dirty = true;
-                return true;
-            }
-            return false;
-        }
-        /// returns true if window is changed but now drawn
+        virtual bool onCommand( int command, int params );
+
+		/// returns true if window is changed but now drawn
         virtual bool isDirty()
         {
             return _dirty || !_docview->isPageImageReady( 0 );

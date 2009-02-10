@@ -23,11 +23,16 @@
 #endif
 
 
+#ifdef WITH_DICT
+#include "dictdlg.h"
+#endif
+
+
 #ifdef _WIN32
-#define XK_Return   0xFF01
-#define XK_Up       0xFF02
-#define XK_Down     0xFF03
-#define XK_Escape   0xFF04
+#define XK_Return   0xFF0D
+#define XK_Up       0xFF52
+#define XK_Down     0xFF54
+#define XK_Escape   0xFF1B
 #else
 
 #ifdef CR_USE_XCB
@@ -35,10 +40,10 @@
 #include <X11/keysymdef.h>
 #else
 
-#define XK_Return   0xFF01
-#define XK_Up       0xFF02
-#define XK_Down     0xFF03
-#define XK_Escape   0xFF04
+#define XK_Return   0xFF0D
+#define XK_Up       0xFF52
+#define XK_Down     0xFF54
+#define XK_Escape   0xFF1B
 
 #endif
 #endif
@@ -67,14 +72,13 @@ class V3DocViewWin : public CRDocViewWindow
 protected:
     CRPropRef _props;
     CRPropRef _newProps;
-    CRGUIAcceleratorTableRef _menuAccelerators;
-    CRGUIAcceleratorTableRef _dialogAccelerators;
     lString16 _dataDir;
     lString16 _settingsFileName;
     lString16 _historyFileName;
     lString8  _css;
     TEncoding _t9encoding;
     lString16 _dictConfig;
+	LVRef<CRDictionary> _dict;
 public:
     virtual void flush(); // override
     bool loadDocument( lString16 filename );
@@ -86,8 +90,14 @@ public:
     bool loadHistory( lString16 filename );
     bool saveHistory( lString16 filename );
     bool loadDictConfig( lString16 filename );
-    CRGUIAcceleratorTableRef getMenuAccelerators() { return _menuAccelerators; }
-    CRGUIAcceleratorTableRef getDialogAccelerators() { return _dialogAccelerators; }
+    CRGUIAcceleratorTableRef getMenuAccelerators()
+    {
+        return  _wm->getAccTables().get("menu");
+    }
+    CRGUIAcceleratorTableRef getDialogAccelerators()
+    {
+        return  _wm->getAccTables().get("dialog");
+    }
 
     /// returns current properties
     CRPropRef getProps() { return _props; }

@@ -6,7 +6,6 @@
 #include <crgui.h>
 #include <crtrace.h>
 
-#include <tinydict.h>
 
 #include <lvarray.h>
 #include <lvstring.h>
@@ -14,116 +13,102 @@
 #include <lvdocview.h>
 #include <stdexcept>
 #include "mainwnd.h"
+#include "bgfit.h"
 #include "t9encoding.h"
 
 
 // to exclude short words from search (requested by LVD)
 #define DICT_MIN_WORD_LENGTH 3
 
-
-class Dictionary
+//TODO: place TinyDictionary to separate file
+CRTinyDict::CRTinyDict( const lString16& config )
 {
-	TinyDictionaryList dicts;
-public:
-	Dictionary( const lString16& config, const lString16& progname )
-	{
-		lString16 path = config;
-		LVAppendPathDelimiter( path );
-		LVContainerRef dir = LVOpenDirectory( config.c_str() );
-		if ( !dir )
-			dir = LVOpenDirectory( LVExtractPath(config).c_str() );
-		if ( !dir.isNull() ) {
-			int count = dir->GetSize();
-			lString16 indexExt(L".index");
-			for ( int i=0; i<count; i++ ) {
-				const LVContainerItemInfo * item = dir->GetObjectInfo( i );
-				if ( !item->IsContainer() ) {
-					lString16 name = item->GetName();
-					if ( name.endsWith( indexExt ) ) {
-						lString16 nameBase = name.substr( 0, name.length() - indexExt.length() );
-						lString16 name1 = nameBase + L".dict";
-						lString16 name2 = nameBase + L".dict.dz";
-						lString16 dataName;
-						int index = -1;
-						for ( int n=0; n<count; n++ ) {
-							const LVContainerItemInfo * item2 = dir->GetObjectInfo( n );
-							if ( !item2->IsContainer() ) {
-								if ( item2->GetName() == name1 || item2->GetName() == name2 ) {
-									index = n;
-									dataName = item2->GetName();
-									break;
-								}
+	lString16 path = config;
+	LVAppendPathDelimiter( path );
+	LVContainerRef dir = LVOpenDirectory( config.c_str() );
+	if ( !dir )
+		dir = LVOpenDirectory( LVExtractPath(config).c_str() );
+	if ( !dir.isNull() ) {
+		int count = dir->GetSize();
+		lString16 indexExt(L".index");
+		for ( int i=0; i<count; i++ ) {
+			const LVContainerItemInfo * item = dir->GetObjectInfo( i );
+			if ( !item->IsContainer() ) {
+				lString16 name = item->GetName();
+				if ( name.endsWith( indexExt ) ) {
+					lString16 nameBase = name.substr( 0, name.length() - indexExt.length() );
+					lString16 name1 = nameBase + L".dict";
+					lString16 name2 = nameBase + L".dict.dz";
+					lString16 dataName;
+					int index = -1;
+					for ( int n=0; n<count; n++ ) {
+						const LVContainerItemInfo * item2 = dir->GetObjectInfo( n );
+						if ( !item2->IsContainer() ) {
+							if ( item2->GetName() == name1 || item2->GetName() == name2 ) {
+								index = n;
+								dataName = item2->GetName();
+								break;
 							}
 						}
-						if ( index>=0 ) {
-							// found pair
-							dicts.add(UnicodeToUtf8(path + name).c_str(), UnicodeToUtf8(path + dataName).c_str());
-						}
+					}
+					if ( index>=0 ) {
+						// found pair
+						dicts.add(UnicodeToUtf8(path + name).c_str(), UnicodeToUtf8(path + dataName).c_str());
 					}
 				}
 			}
 		}
-		CRLog::info( "%d dictionaries opened", dicts.length() );
 	}
-	~Dictionary()
-	{
-	}
-    lString8 translate(const lString8 & w)
-	{
-        lString16 s16 = Utf8ToUnicode( w );
-        s16.lowercase();
-        lString8 word = UnicodeToUtf8( s16 );
-		lString8 body;
-		TinyDictResultList results;
-        if ( dicts.length() == 0 ) {
-            body << "<title><p>No dictionaries found</p></title>";
-            body << "<p>Place dictionaries to directory 'dict' of SD card.</p>";
-            body << "<p>Dictionaries in standard unix .dict format are supported.</p>";
-            body << "<p>For each dictionary, pair of files should be provided: data file (with .dict or .dict.dz extension, and index file with .index extension</p>";
-		} else if ( dicts.find(results, word.c_str(), TINY_DICT_OPTION_STARTS_WITH ) ) {
-			for ( int d = 0; d<results.length(); d++ ) {
-				TinyDictWordList * words = results.get(d);
-				if ( words->length()>0 )
-					body << "<title><p>From dictionary " << words->getDictionaryName() << ":</p></title>";
-				// for each found word
-				for ( int i=0; i<words->length(); i++ ) {
-					//TinyDictWord * word = words->get(i);
-					const char * article = words->getArticle( i );
-					body << "<code style=\"text-align: left; text-indent: 0; font-size: 22\">";
-					if ( article ) {
-						body << article;
-					} else {
-						body << "[cannot read article]";
-					}
-					body << "</code>";
-					if ( i<words->length()-1 )
-						body << "<hr/>";
+	CRLog::info( "%d dictionaries opened", dicts.length() );
+}
+
+
+lString8 CRTinyDict::translate(const lString8 & w)
+{
+    lString16 s16 = Utf8ToUnicode( w );
+    s16.lowercase();
+    lString8 word = UnicodeToUtf8( s16 );
+	lString8 body;
+	TinyDictResultList results;
+    if ( dicts.length() == 0 ) {
+        body << "<title><p>No dictionaries found</p></title>";
+        body << "<p>Place dictionaries to directory 'dict' of SD card.</p>";
+        body << "<p>Dictionaries in standard unix .dict format are supported.</p>";
+        body << "<p>For each dictionary, pair of files should be provided: data file (with .dict or .dict.dz extension, and index file with .index extension</p>";
+	} else if ( dicts.find(results, word.c_str(), TINY_DICT_OPTION_STARTS_WITH ) ) {
+		for ( int d = 0; d<results.length(); d++ ) {
+			TinyDictWordList * words = results.get(d);
+			if ( words->length()>0 )
+				body << "<title><p>From dictionary " << words->getDictionaryName() << ":</p></title>";
+			// for each found word
+			for ( int i=0; i<words->length(); i++ ) {
+				//TinyDictWord * word = words->get(i);
+				const char * article = words->getArticle( i );
+				body << "<code style=\"text-align: left; text-indent: 0; font-size: 22\">";
+				if ( article ) {
+					body << article;
+				} else {
+					body << "[cannot read article]";
 				}
+				body << "</code>";
+				if ( i<words->length()-1 )
+					body << "<hr/>";
 			}
-		} else {
-			body << "<title><p>Article for word " << word << " not found</p></title>";
 		}
-
-		lString8 res;
-		res << "\0xef\0xbb\0xbf";
-		res << "<?xml version=\"1.0\" encoding=\"UTF-8\"?>";
-		res << "<FictionBook><body>";
-		res << body;
-		res << "</body></FictionBook>";
-		return res;
+	} else {
+		body << "<title><p>Article for word " << word << " not found</p></title>";
 	}
-};
+
+	lString8 res;
+	res << "\0xef\0xbb\0xbf";
+	res << "<?xml version=\"1.0\" encoding=\"UTF-8\"?>";
+	res << "<FictionBook><body>";
+	res << body;
+	res << "</body></FictionBook>";
+	return res;
+}
 
 
-#ifdef _WIN32
-#define DICTD_CONF "C:\\dict\\"
-#else
-#ifdef CR_USE_JINKE
-#define DICTD_CONF "/root/crengine/dict/"
-#else
-#define DICTD_CONF "/media/sd/dict"
-#endif
-#endif
 
 
 
@@ -328,9 +313,11 @@ public:
         return false;
     }
 
-    const lString16 & get()
+    const lString16 get()
     {
-        return candidates_[current_]->getWord();
+        if ( current_ >= 0 && current_ < candidates_.length() )
+            return candidates_[current_]->getWord();
+        return lString16();
     }
 };
 
@@ -372,107 +359,15 @@ public:
     virtual bool onCommand( int command, int params = 0 );
 };
 
-typedef Dictionary dict_type;
-LVRef<dict_type> dict_;
+//typedef Dictionary dict_type;
+//LVRef<dict_type> dict_;
 
-inline lUInt16 minBits( lUInt16 n1, lUInt16 n2, lUInt16 mask )
-{
-	if ( n1 == n2 )
-		return n1 & mask;
-	if ( (n1 & mask) < (n2 & mask) )
-		return n1 & mask;
-	else
-		return n2 & mask;
-}
-
-inline lUInt16 maxBits( lUInt16 n1, lUInt16 n2, lUInt16 mask )
-{
-	if ( n1 == n2 )
-		return n1 & mask;
-	if ( (n1 & mask) > (n2 & mask) )
-		return n1 & mask;
-	else
-		return n2 & mask;
-}
-
-/// window to show on top of DocView window, shifting/stretching DOCView content to fit
-class BackgroundFitWindow : public CRGUIWindowBase
-{
-protected:
-    V3DocViewWin * mainwin_;
-    LVDocView& docview_;
-    virtual void draw()
-    {
-        mainwin_->flush();
-        lvRect fullRect = _wm->getScreen()->getRect();
-        LVDrawBuf * buf = _wm->getScreen()->getCanvas().get();
-#if 0
-		buf->FillRect(0, 0, 600, 60, 0xFFFFFF );
-		for ( int k=0; k<60; k++ ) {
-			buf->FillRect(k*10, k, k*10+10, k+1, 0 );
-			buf->FillRect(k*10+100, k, k*10+10+100, k+1, 0 );
-		}
-#endif
-        int src_y0 = fullRect.top;
-        int src_y1 = fullRect.bottom;
-        // TODO: support top position of window too
-        int dst_y0 = fullRect.top;
-        int dst_y1 = _rect.top;
-        int linesz = buf->GetBitsPerPixel() * buf->GetWidth() / 8;
-		int lastline = -3;
-		//int delta = (src_y1 - src_y0) - (dst_y1 - dst_y0);
-        for ( int y = dst_y0; y<dst_y1; y++ ) {
-            int srcy = ((src_y1 - src_y0) * y) / (dst_y1 - dst_y0) + 1;
-			lUInt8 * src = buf->GetScanLine( srcy );
-			lUInt8 * dst = buf->GetScanLine( y );
-			memcpy( dst, src, linesz );
-			if ( srcy == lastline+2 ) {
-				if ( buf->GetBitsPerPixel()==2 ) {
-					src = buf->GetScanLine( srcy-1 );
-					dst = buf->GetScanLine( y-1 );
-					for ( int i=0; i<linesz; i++ ) {
-						lUInt16 n1 = src[i];
-						lUInt16 n2 = dst[i];
-						if ( n1 != n2 )
-							n1 = n1+ 0;
-						if ( false ) {
-							// min
-#if GRAY_INVERSE==1
-							n1 = maxBits(n1,n2,0x03) | maxBits(n1,n2,0x0C) | maxBits(n1,n2,0x30) | maxBits(n1,n2,0xC0);
-#else
-							n1 = minBits(n1,n2,0x03) | minBits(n1,n2,0x0C) | minBits(n1,n2,0x30) | minBits(n1,n2,0xC0);
-#endif
-						} else {
-							// blend
-							n1 = ( (n1 & 0x33) << 8) | ((n1 & 0xCC)>>2);
-							n2 = ( (n2 & 0x33) << 8) | ((n2 & 0xCC)>>2);
-							n1 = (n1 + n2) >> 1;
-							n1 = ((n1 & 0x3300)>>8) | ((n1 & 0x33)<<2);
-						}
-						dst[i] = (lUInt8)n1;
-					}
-				}
-				// TODO: support other color formats
-			}
-			lastline = srcy;
-        }
-    }
-public:
-    BackgroundFitWindow(  CRGUIWindowManager * wm, V3DocViewWin * mainwin )
-    : CRGUIWindowBase(wm),
-        mainwin_(mainwin),
-        docview_(*mainwin->getDocView())
-    {
-        _fullscreen = true;
-    }
-};
 
 class DictWindow : public BackgroundFitWindow
 {
     selector selector_;
-    lString8 progname_;
-    lString8 dict_conf_;
     const TEncoding& encoding_;
+	CRDictionary & dict_;
 protected:
     virtual void draw()
     {
@@ -514,18 +409,14 @@ protected:
 
 public:
 
-	DictWindow( CRGUIWindowManager * wm, V3DocViewWin * mainwin, const TEncoding& encoding ) :
+	DictWindow( CRGUIWindowManager * wm, V3DocViewWin * mainwin, const TEncoding& encoding, CRDictionary & dict ) :
 		BackgroundFitWindow(wm, mainwin),
 		selector_(*mainwin->getDocView(), encoding),
-		progname_("lbook-fb2-plugin"),
-		dict_conf_(DICTD_CONF),
-        encoding_(encoding) {
+        encoding_(encoding),
+		dict_(dict) {
 
 		this->setAccelerators( mainwin->getDialogAccelerators() );
 
-		if (dict_.isNull()){
-			dict_ = LVRef<dict_type>(new dict_type(Utf8ToUnicode(dict_conf_),Utf8ToUnicode(progname_)));
-		};
 		_rect = _wm->getScreen()->getRect();
 		//_rect.bottom = _rect.top;
 		_rect.top = _rect.bottom - 40;
@@ -557,7 +448,11 @@ public:
 					lString8 translated;
 					lString8 output;
 					lString16 src = selector_.get();
-					output = dict_->translate( UnicodeToUtf8(src) );
+                    if ( src.empty() ) {
+                        close();
+                        return true;
+                    }
+					output = dict_.translate( UnicodeToUtf8(src) );
 					/*
 					if(translated.length() == 0) {
 						output = lString8("No article for this word");
@@ -618,8 +513,8 @@ bool Article::onCommand( int command, int params )
         }
 }
 
-void activate_dict( CRGUIWindowManager *wm, V3DocViewWin * mainwin, const TEncoding& encoding )
+void activate_dict( CRGUIWindowManager *wm, V3DocViewWin * mainwin, const TEncoding& encoding, CRDictionary & dict )
 {
     CRLog::info("Entering dict mode\n");
-    wm->activateWindow(new DictWindow(wm, mainwin, encoding));
+    wm->activateWindow(new DictWindow(wm, mainwin, encoding, dict));
 }

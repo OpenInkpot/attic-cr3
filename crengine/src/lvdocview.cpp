@@ -1195,7 +1195,7 @@ void LVDocView::drawPageHeader( LVDrawBuf * drawbuf, const lvRect & headerRc, in
         for ( int i=0; i<sbounds.length(); i++) {
             int x = info.left + sbounds[i]*(info.width()-1) / 10000;
             lUInt32 c = x<info.left+percent_pos ? cl2 : cl1;
-            drawbuf->FillRect(x, gpos-4, x+1, gpos-0+1, c );
+            drawbuf->FillRect(x, gpos-4, x+1, gpos-0+2, c );
         }
     }
 
@@ -2114,16 +2114,19 @@ void SaveBase64Objects( ldomNode * node )
 }
 #endif
 
+/// returns pointer to bookmark/last position containter of currently opened file
+CRFileHistRecord * LVDocView::getCurrentFileHistRecord()
+{
+    if ( m_filename.empty() )
+        return NULL;
+    return m_hist.savePosition( m_filename, m_filesize,
+        getTitle(), getAuthors(), getSeries(), getBookmark() );
+}
+
 /// save last file position
 void LVDocView::savePosition()
 {
-    if ( m_filename.empty() )
-        return;
-    //lString16 titleText;
-    //lString16 posText;
-    //getBookmarkPosText( getBookmark(), titleText, posText );
-    m_hist.savePosition( m_filename, m_filesize,
-        getTitle(), getAuthors(), getSeries(), getBookmark() );
+	getCurrentFileHistRecord();
 }
 
 /// restore last file position
@@ -3010,7 +3013,7 @@ int LVDocView::getNextPageOffset()
         int p = m_pages.FindNearestPage(m_pos, 0)  + getVisiblePageCount();
         if ( p<m_pages.length() )
             return m_pages[p]->start;
-        if ( !p )
+        if ( !p || m_pages.length()==0 )
             return 0;
         return m_pages[m_pages.length()-1]->start;
     }
@@ -3033,6 +3036,53 @@ int LVDocView::getPrevPageOffset()
             p = 0;
         return m_pages[p]->start;
     }
+}
+
+static void addItem( LVPtrVector<LVTocItem, false> & items, LVTocItem * item )
+{
+    if ( item->getLevel()>0 )
+        items.add( item );
+    for ( int i=0; i<item->getChildCount(); i++ ) {
+        addItem( items, item->getChild( i ) );
+    }
+}
+
+/// returns pointer to TOC root node
+bool LVDocView::getFlatToc( LVPtrVector<LVTocItem, false> & items )
+{
+    items.clear();
+    addItem( items, getToc() );
+    return items.length() > 0;
+}
+
+/// -1 moveto previous chapter, 0 to current chaoter first pae, 1 to next chapter
+bool LVDocView::moveByChapter( int delta )
+{
+	//TODO:
+	return false;
+}
+
+/// saves current page bookmark under numbered shortcut
+void LVDocView::saveCurrentPageShortcutBookmark( int number )
+{
+	CRFileHistRecord * rec = getCurrentFileHistRecord();
+	if ( !rec )
+		return;
+	rec->setShortcutBookmark( number, getBookmark() );
+}
+
+/// restores page using bookmark by numbered shortcut
+bool LVDocView::goToPageShortcutBookmark( int number )
+{
+	CRFileHistRecord * rec = getCurrentFileHistRecord();
+	if ( !rec )
+		return false;
+	lString16 pos = rec->getShortcutBookmark( number );
+	ldomXPointer p = m_doc->createXPointer( pos );
+	if ( p.isNull() )
+		return false;
+	goToBookmark( p );
+	return true;
 }
 
 // execute command
@@ -3148,6 +3198,26 @@ void LVDocView::doCommand( LVDocCmd cmd, int param )
                 setTextFormatOptions( txt_format_auto );
         }
         break;
+	case DCMD_BOOKMARK_SAVE_N:
+		{
+			// save current page bookmark under spicified number
+            saveCurrentPageShortcutBookmark( param );
+		}
+		break;
+	case DCMD_BOOKMARK_GO_N:
+		{
+			// go to bookmark with specified number
+            if ( !goToPageShortcutBookmark( param ) ) {
+                // if no bookmark exists with specified shortcut, save new bookmark instead
+                saveCurrentPageShortcutBookmark( param );
+            }
+		}
+		break;
+	case DCMD_MOVE_BY_CHAPTER:
+		{
+			moveByChapter( param );
+		}
+		break;
     default:
         // DO NOTHING
         break;

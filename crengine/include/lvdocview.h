@@ -191,8 +191,11 @@ enum LVDocCmd
     DCMD_ZOOM_IN,
     DCMD_ZOOM_OUT,
     DCMD_TOGGLE_TEXT_FORMAT,
+    DCMD_BOOKMARK_SAVE_N, // save current page bookmark under spicified number
+    DCMD_BOOKMARK_GO_N,  // go to bookmark with specified number
+	DCMD_MOVE_BY_CHAPTER, // param=-1 - previous chapter, 1 = next chapter
 };
-#define LVDOCVIEW_COMMANDS_END DCMD_TOGGLE_TEXT_FORMAT
+#define LVDOCVIEW_COMMANDS_END DCMD_MOVE_BY_CHAPTER
 
 enum LVDocViewMode
 {
@@ -411,7 +414,15 @@ protected:
     void checkPos();
     /// selects link on page, if any (delta==0 - current, 1-next, -1-previous). returns selected link range, null if no links.
     virtual ldomXRange * selectPageLink( int delta, bool wrapAround);
+	/// returns pointer to bookmark/last position containter of currently opened file
+	CRFileHistRecord * getCurrentFileHistRecord();
 public:
+	/// -1 moveto previous chapter, 0 to current chaoter first pae, 1 to next chapter
+	bool moveByChapter( int delta );
+	/// saves current page bookmark under numbered shortcut
+	void saveCurrentPageShortcutBookmark( int number );
+	/// restores page using bookmark by numbered shortcut
+	bool goToPageShortcutBookmark( int number );
     /// returns true if page image is available (0=current, -1=prev, 1=next)
     bool getShowCover() { return  m_showCover; }
     /// returns true if page image is available (0=current, -1=prev, 1=next)
@@ -544,6 +555,8 @@ public:
     LVRendPageList * getPageList() { return &m_pages; }
     /// returns pointer to TOC root node
     LVTocItem * getToc();
+    /// returns pointer to TOC root node
+    bool getFlatToc( LVPtrVector<LVTocItem, false> & items );
     /// set view mode (pages/scroll)
     void setViewMode( LVDocViewMode view_mode, int visiblePageCount=-1 );
     /// get view mode (pages/scroll)
