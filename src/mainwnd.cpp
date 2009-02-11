@@ -27,7 +27,7 @@
 #ifdef WITH_DICT
 #include "dictdlg.h"
 #endif
-
+#include "citedlg.h"
 
 class CRNumberEditDialog : public CRGUIWindowBase
 {
@@ -907,6 +907,16 @@ const lChar16 * defT9encoding[] = {
     NULL
 };
 
+const lChar16 * defT5encoding[] = {
+    L"",     // 0 STUB
+    L"abcde",  // 1
+    L"fghij",  // 2
+    L"klmno",  // 3
+    L"pqrst",  // 4
+    L"uvwxyz", // 5
+    NULL
+};
+
 bool V3DocViewWin::loadSkin( lString16 pathname )
 {
     CRSkinRef skin;
@@ -922,7 +932,7 @@ bool V3DocViewWin::loadSkin( lString16 pathname )
 }
 
 V3DocViewWin::V3DocViewWin( CRGUIWindowManager * wm, lString16 dataDir )
-: CRDocViewWindow ( wm ), _dataDir(dataDir), _t9encoding(defT9encoding)
+: CRDocViewWindow ( wm ), _dataDir(dataDir), _t9encoding(defT5encoding) //defT9encoding)
 {
     CRLog::trace("V3DocViewWin()");
     LVArray<int> sizes( cr_font_sizes, sizeof(cr_font_sizes)/sizeof(int) );
@@ -1301,6 +1311,10 @@ VIEWER_MENU_4ABOUT=About...
                 LVImageSourceRef(),
                 LVFontRef() ) );
 #endif
+    menu_win->addItem( new CRMenuItem( menu_win, MCMD_CITE,
+                _wm->translateString("VIEVER_MENU_CITE", "Cite.."),
+                LVImageSourceRef(),
+                LVFontRef() ) );
     menu_win->addItem( new CRMenuItem( menu_win, MCMD_BOOKMARK_LIST,
                 _wm->translateString("VIEWER_MENU_BOOKMARK_LIST", "Bookmarks..."),
                 LVImageSourceRef(),
@@ -1385,6 +1399,9 @@ bool V3DocViewWin::onCommand( int command, int params )
         activate_dict( _wm, this, _t9encoding, *_dict );
         return true;
 #endif
+    case MCMD_CITE:
+        activate_cite( _wm, this);
+        return true;
     case MCMD_GO_PAGE_APPLY:
         _docview->doCommand( DCMD_GO_PAGE, params-1 );
         return true;
