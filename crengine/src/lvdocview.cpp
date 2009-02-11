@@ -3088,7 +3088,14 @@ void LVDocView::saveCurrentPageShortcutBookmark( int number )
 	CRFileHistRecord * rec = getCurrentFileHistRecord();
 	if ( !rec )
 		return;
-	rec->setShortcutBookmark( number, getBookmark() );
+    ldomXPointer p = getBookmark();
+	CRBookmark * bm = rec->setShortcutBookmark( number, p );
+    lString16 titleText;
+    lString16 posText;
+    if ( !p.isNull() && bm && getBookmarkPosText( p, titleText, posText ) ) {
+         bm->setTitleText( titleText );
+         bm->setPosText( posText );
+    }
 }
 
 /// restores page using bookmark by numbered shortcut
@@ -3097,7 +3104,10 @@ bool LVDocView::goToPageShortcutBookmark( int number )
 	CRFileHistRecord * rec = getCurrentFileHistRecord();
 	if ( !rec )
 		return false;
-	lString16 pos = rec->getShortcutBookmark( number );
+	CRBookmark * bmk = rec->getShortcutBookmark( number );
+	if ( !bmk )
+		return false;
+	lString16 pos = bmk->getStartPos();
 	ldomXPointer p = m_doc->createXPointer( pos );
 	if ( p.isNull() )
 		return false;
