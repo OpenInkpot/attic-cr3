@@ -10,4 +10,4 @@ DEB_MAKE_CLEAN_TARGET := clean
 
 clean::
 	autoreconf -fivs
-	./configure --prefix=/usr $(DEB_CONFIGURE_EXTRA_FLAGS)
+	./configure --prefix=/usr --sysconfdir=/etc $(DEB_CONFIGURE_EXTRA_FLAGS)
