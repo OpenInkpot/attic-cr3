@@ -406,7 +406,7 @@ protected:
             keyRect.left = keyRect.right; //borders.left;
         }
         keyRect.right = rect.right;
-        if ( !keyRect.isEmpty() ) {
+		if ( !clientSkin.isNull() && !keyRect.isEmpty() ) {
             clientSkin->draw( *buf, keyRect );
             clientSkin->drawText( *buf, keyRect, prompt );
         }
@@ -441,6 +441,7 @@ public:
 			case MCMD_SELECT_8:
 			case MCMD_SELECT_9:
 				selector_.push_button( command - MCMD_SELECT_0 + '0' );
+                setDirty();
 				break;
 			case MCMD_SCROLL_FORWARD:
 				selector_.down();
@@ -480,6 +481,7 @@ public:
 					close();
 					return true ;
 				}
+                setDirty();
 				break;
 		}
 		return true;
