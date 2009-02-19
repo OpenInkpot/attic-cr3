@@ -143,6 +143,7 @@ LVDocView::LVDocView()
 #endif
     m_defaultFontFace = lString8(DEFAULT_FONT_NAME);
     m_props = LVCreatePropsContainer();
+    m_doc_props = LVCreatePropsContainer();
     propsUpdateDefaults(m_props);
 
     //m_drawbuf.Clear(m_backgroundColor);
@@ -328,10 +329,11 @@ void LVDocView::Clear()
         if (m_doc)
             delete m_doc;
         m_doc = NULL;
+        m_doc_props->clear();
         m_toc.clear();
         if (!m_stream.isNull())
             m_stream.Clear();
-        if (!m_container.isNull())
+        if ( !m_container.isNull() )
             m_container.Clear();
         if (!m_arc.isNull())
             m_arc.Clear();
@@ -2149,6 +2151,22 @@ void LVDocView::restorePosition()
     }
 }
 
+static void FileToArcProps( CRPropRef props )
+{
+    lString16 s = props->getStringDef(DOC_PROP_FILE_NAME);
+    if ( !s.empty() )
+        props->setString(DOC_PROP_ARC_NAME, s );
+    s = props->getStringDef(DOC_PROP_FILE_PATH);
+    if ( !s.empty() )
+        props->setString(DOC_PROP_ARC_PATH, s );
+    s = props->getStringDef(DOC_PROP_FILE_SIZE);
+    if ( !s.empty() )
+        props->setString(DOC_PROP_ARC_SIZE, s );
+    props->setString( DOC_PROP_FILE_NAME, lString16() );
+    props->setString( DOC_PROP_FILE_PATH, lString16() );
+    props->setString( DOC_PROP_FILE_SIZE, lString16() );
+}
+
 /// load document from file
 bool LVDocView::LoadDocument( const lChar16 * fname )
 {
@@ -2172,12 +2190,17 @@ bool LVDocView::LoadDocument( const lChar16 * fname )
     else
         dir = lString16( fname, last_slash );
     lString16 fn( fname + last_slash + 1 );
+    m_doc_props->setString(DOC_PROP_FILE_PATH, dir);
     m_container = LVOpenDirectory(dir.c_str());
     if ( m_container.isNull() )
         return false;
     LVStreamRef stream = m_container->OpenStream(fn.c_str(), LVOM_READ);
     if (!stream)
         return false;
+    m_doc_props->setString(DOC_PROP_FILE_NAME, fn);
+    m_doc_props->setString(DOC_PROP_FILE_SIZE, lString16::itoa((int)stream->GetSize()));
+
+
     if ( LoadDocument( stream ) ) {
         m_filename = lString16(fname);
         return true;
@@ -2239,9 +2262,10 @@ void LVDocView::createDefaultDocument( lString16 title, lString16 message )
     m_doc->getStyleSheet()->clear();
     m_doc->getStyleSheet()->parse(m_stylesheet.c_str());
 
-    m_doc->getProps()->clear();
+    m_doc_props->clear();
+    m_doc->setProps( m_doc_props );
 
-    m_doc->getProps()->setString(DOC_PROP_TITLE, title);
+    m_doc_props->setString(DOC_PROP_TITLE, title);
 
     requestRender();
 }
@@ -2321,8 +2345,7 @@ bool LVDocView::LoadDocument( LVStreamRef stream )
     #else
                 m_doc = new ldomDocument();
     #endif
-                m_doc->getProps()->clear();
-
+                m_doc->setProps( m_doc_props );
 
                 lString16 rootfilePath;
                 lString16 rootfileMediaType;
@@ -2361,8 +2384,8 @@ bool LVDocView::LoadDocument( LVStreamRef stream )
                     if ( !content_stream.isNull() ) {
                         ldomDocument * doc = LVParseXMLStream( content_stream );
                         if ( doc ) {
-                            m_doc->getProps()->setString(DOC_PROP_TITLE, doc->textFromXPath( lString16(L"package/metadata/title") ));
-                            m_doc->getProps()->setString(DOC_PROP_AUTHORS, doc->textFromXPath( lString16(L"package/metadata/creator") ));
+                            m_doc_props->setString(DOC_PROP_TITLE, doc->textFromXPath( lString16(L"package/metadata/title") ));
+                            m_doc_props->setString(DOC_PROP_AUTHORS, doc->textFromXPath( lString16(L"package/metadata/creator") ));
                             // items
                             for ( int i=1; i<50000; i++ ) {
                                 ldomNode * item = doc->nodeFromXPath( lString16(L"package/manifest/item[") + lString16::itoa(i) + L"]" );
@@ -2483,6 +2506,7 @@ bool LVDocView::LoadDocument( LVStreamRef stream )
                 return false;
             }
             // archieve
+            FileToArcProps( m_doc_props );
             bool found = false;
             for (int i=0; i<m_arc->GetObjectCount(); i++)
             {
@@ -2509,6 +2533,8 @@ bool LVDocView::LoadDocument( LVStreamRef stream )
                         m_stream = m_arc->OpenStream( item->GetName(), LVOM_READ );
                         if ( m_stream.isNull() )
                             continue;
+                        m_doc_props->setString(DOC_PROP_FILE_NAME, item->GetName());
+                        m_doc_props->setString(DOC_PROP_FILE_SIZE, lString16::itoa((int)m_stream->GetSize()));
                         found = true;
                         break;
                     }
@@ -2612,6 +2638,32 @@ HTML_AUTOCLOSE_TABLE[] = {
     NULL
 };
 
+const lChar16 * getDocFormatName( doc_format_t fmt )
+{
+    switch (fmt) {
+    case doc_format_fb2:
+        return L"FictionBook (FB2)";
+    case doc_format_txt:
+        return L"Plain text (TXT)";
+    case doc_format_rtf:
+        return L"Rich text (RTF)";
+    case doc_format_epub:
+        return L"EPUB";
+    case doc_format_html:
+        return L"HTML";
+    default:
+        return L"Unknown format";
+    }
+}
+
+/// sets current document format
+void LVDocView::setDocFormat( doc_format_t fmt )
+{
+    m_doc_format = fmt;
+    lString16 desc( getDocFormatName( fmt ) );
+    m_doc_props->setString(DOC_PROP_FILE_FORMAT, desc );
+}
+
 bool LVDocView::ParseDocument( )
 {
     m_posIsSet = false;
@@ -2626,6 +2678,7 @@ bool LVDocView::ParseDocument( )
 #else
     m_doc = new ldomDocument();
 #endif
+    m_doc->setProps( m_doc_props );
     m_doc->setDocFlags( saveFlags );
     m_doc->setContainer( m_container );
 
@@ -2731,10 +2784,10 @@ bool LVDocView::ParseDocument( )
 
 
     //m_doc->getProps()->clear();
-    if ( m_doc->getProps()->getStringDef(DOC_PROP_TITLE, "").empty() ) {
-        m_doc->getProps()->setString(DOC_PROP_AUTHORS, extractDocAuthors( m_doc ));
-        m_doc->getProps()->setString(DOC_PROP_TITLE, extractDocTitle( m_doc ));
-        m_doc->getProps()->setString(DOC_PROP_SERIES_NAME, extractDocSeries( m_doc ));
+    if ( m_doc_props->getStringDef(DOC_PROP_TITLE, "").empty() ) {
+        m_doc_props->setString(DOC_PROP_AUTHORS, extractDocAuthors( m_doc ));
+        m_doc_props->setString(DOC_PROP_TITLE, extractDocTitle( m_doc ));
+        m_doc_props->setString(DOC_PROP_SERIES_NAME, extractDocSeries( m_doc ));
     }
 
     requestRender();
@@ -2744,6 +2797,42 @@ bool LVDocView::ParseDocument( )
 bool LVDocView::LoadDocument( const char * fname )
 {
     return LoadDocument( LocalToUnicode(lString8(fname)).c_str() );
+}
+
+/// returns XPointer to middle paragraph of current page
+ldomXPointer LVDocView::getCurrentPageMiddleParagraph()
+{
+    LVLock lock(getMutex());
+    checkPos();
+    ldomXPointer ptr;
+    if ( !m_doc )
+        return ptr;
+
+    if ( getViewMode()==DVM_SCROLL ) {
+        // SCROLL mode
+        int starty = m_pos;
+        int endy = m_pos + m_dy;
+        int fh = GetFullHeight();
+        if ( endy>=fh )
+            endy = fh-1;
+        ptr = m_doc->createXPointer( lvPoint( 0, (starty + endy)/ 2 ) );
+    } else {
+        // PAGES mode
+        int pageIndex = getCurPage();
+        if ( pageIndex<0 || pageIndex>=m_pages.length() )
+            pageIndex = getCurPage();
+        LVRendPageInfo * page = m_pages[ pageIndex ];
+        if ( page->type==PAGE_TYPE_NORMAL)
+            ptr = m_doc->createXPointer( lvPoint( 0, (page->start + page->height)/2 ) );
+    }
+    if ( ptr.isNull() )
+        return ptr;
+    ldomXPointerEx p( ptr );
+    if ( !p.isVisibleFinal() )
+        if ( !p.prevVisibleFinal() )
+            if ( !p.nextVisibleFinal() )
+                return ptr;
+    return ldomXPointer( p );
 }
 
 /// returns bookmark

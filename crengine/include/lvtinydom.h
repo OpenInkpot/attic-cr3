@@ -50,6 +50,13 @@
 #define DOC_PROP_TITLE           "doc.title"
 #define DOC_PROP_SERIES_NAME     "doc.series.name"
 #define DOC_PROP_SERIES_NUMBER   "doc.series.number"
+#define DOC_PROP_ARC_NAME        "doc.archive.name"
+#define DOC_PROP_ARC_PATH        "doc.archive.path"
+#define DOC_PROP_ARC_SIZE        "doc.archive.size"
+#define DOC_PROP_FILE_NAME       "doc.file.name"
+#define DOC_PROP_FILE_PATH       "doc.file.path"
+#define DOC_PROP_FILE_SIZE       "doc.file.size"
+#define DOC_PROP_FILE_FORMAT     "doc.file.format"
 
 //#define LDOM_USE_OWN_MEM_MAN 0
 
@@ -217,6 +224,8 @@ public:
     }
     /// returns doc properties collection
     CRPropRef getProps() { return _docProps; }
+    /// returns doc properties collection
+    void setProps( CRPropRef props ) { _docProps = props; }
 private:
     LDOMNameIdMap _elementNameTable;    // Element Name<->Id map
     LDOMNameIdMap _attrNameTable;       // Attribute Name<->Id map
@@ -688,12 +697,40 @@ public:
     bool nextSibling();
     /// move to previous sibling
     bool prevSibling();
+    /// move to next sibling element
+    bool nextSiblingElement();
+    /// move to previous sibling element
+    bool prevSiblingElement();
     /// move to parent
     bool parent();
+    /// move to first child of current node
+    bool firstChild();
+    /// move to last child of current node
+    bool lastChild();
+    /// move to first element child of current node
+    bool firstElementChild();
+    /// move to last element child of current node
+    bool lastElementChild();
     /// move to child #
     bool child( int index );
     /// move to sibling #
     bool sibling( int index );
+    /// ensure that current node is element (move to parent, if not - from text node to element)
+    bool ensureElement();
+    /// moves pointer to parent element with FINAL render method, returns true if success
+    bool ensureFinal();
+    /// returns true if current node is visible element with render method == erm_final
+    bool isVisibleFinal();
+    /// returns true if current node is element
+    bool isElement() { return _node!=NULL && _node->isElement(); }
+    /// move to next final visible node (~paragraph)
+    bool nextVisibleFinal();
+    /// move to previous final visible node (~paragraph)
+    bool prevVisibleFinal();
+    /// forward iteration by elements of DOM three
+    bool nextElement();
+    /// backward iteration by elements of DOM three
+    bool prevElement();
     /// calls specified function recursively for all elements of DOM tree
     void recurseElements( void (*pFun)( ldomXPointerEx & node ) );
     /// calls specified function recursively for all nodes of DOM tree

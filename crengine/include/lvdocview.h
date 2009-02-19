@@ -54,6 +54,8 @@ typedef enum {
     doc_format_html,
 } doc_format_t;
 
+const lChar16 * getDocFormatName( doc_format_t fmt );
+
 /// text format import options
 typedef enum {
     txt_format_pre,  // no formatting, leave lines as is
@@ -377,10 +379,13 @@ private:
 
     LVDocViewCallback * m_callback;
 
+    // options
     CRPropRef m_props;
+    // document properties
+    CRPropRef m_doc_props;
 
     /// sets current document format
-    void setDocFormat( doc_format_t fmt ) { m_doc_format = fmt; }
+    void setDocFormat( doc_format_t fmt );
 
 
     // private functions
@@ -408,8 +413,6 @@ protected:
     int getNextPageOffset();
     /// returns document offset for previous page
     int getPrevPageOffset();
-    /// render document, if not rendered
-    void checkRender();
     /// ensure current position is set to current bookmark value
     void checkPos();
     /// selects link on page, if any (delta==0 - current, 1-next, -1-previous). returns selected link range, null if no links.
@@ -417,6 +420,10 @@ protected:
     /// set status bar and clock mode
     void setStatusMode( int newMode, bool showClock );
 public:
+    /// returns XPointer to middle paragraph of current page
+    ldomXPointer getCurrentPageMiddleParagraph();
+    /// render document, if not rendered
+    void checkRender();
     /// saves current position to navigation history, to be able return back
     void savePosToNavigationHistory();
     /// returns pointer to bookmark/last position containter of currently opened file
@@ -615,16 +622,17 @@ public:
 
     /// returns document
     ldomDocument * getDocument() { return m_doc; }
-
+    /// return document properties
+    CRPropRef getDocProps() { return m_doc_props; }
     /// returns book title
-    lString16 getTitle() { return m_doc->getProps()->getStringDef(DOC_PROP_TITLE); }
+    lString16 getTitle() { return m_doc_props->getStringDef(DOC_PROP_TITLE); }
     /// returns book author(s)
-    lString16 getAuthors() { return m_doc->getProps()->getStringDef(DOC_PROP_AUTHORS); }
+    lString16 getAuthors() { return m_doc_props->getStringDef(DOC_PROP_AUTHORS); }
     /// returns book series name and number (series name #1)
     lString16 getSeries()
     { 
-        lString16 name = m_doc->getProps()->getStringDef(DOC_PROP_SERIES_NAME);
-        lString16 number = m_doc->getProps()->getStringDef(DOC_PROP_SERIES_NUMBER);
+        lString16 name = m_doc_props->getStringDef(DOC_PROP_SERIES_NAME);
+        lString16 number = m_doc_props->getStringDef(DOC_PROP_SERIES_NUMBER);
         if ( !name.empty() && !number.empty() )
             name << L" #" << number;
         return name;
