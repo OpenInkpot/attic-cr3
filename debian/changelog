@@ -1,3 +1,10 @@
+cr3 (3.0.17-8) unstable; urgency=low
+
+  * Show document properties in About dialog
+  * Add scrollbar to dictionary article view
+
+ -- Vadim Lopatin <vadim.lopatin@coolreader.org>  Thu, 19 Feb 2009 08:15:00 +0300
+
 cr3 (3.0.17-7) unstable; urgency=low
 
   * Fixed dialogs screen update bug
