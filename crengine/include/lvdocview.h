@@ -420,6 +420,9 @@ protected:
     /// set status bar and clock mode
     void setStatusMode( int newMode, bool showClock );
 public:
+    /// returns selected (marked) ranges
+    ldomMarkedRangeList * getMarkedRanges() { return &m_markRanges; }
+
     /// returns XPointer to middle paragraph of current page
     ldomXPointer getCurrentPageMiddleParagraph();
     /// render document, if not rendered
@@ -430,6 +433,8 @@ public:
     CRFileHistRecord * getCurrentFileHistRecord();
 	/// -1 moveto previous chapter, 0 to current chaoter first pae, 1 to next chapter
 	bool moveByChapter( int delta );
+	/// -1 moveto previous page, 1 to next page
+	bool moveByPage( int delta );
 	/// saves current page bookmark under numbered shortcut
 	void saveCurrentPageShortcutBookmark( int number );
 	/// restores page using bookmark by numbered shortcut

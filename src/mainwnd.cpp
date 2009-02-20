@@ -33,6 +33,8 @@
 #include "bmkdlg.h"
 #include "recentdlg.h"
 #include "viewdlg.h"
+#include "scrkbd.h"
+#include "selnavig.h"
 
 #include "citedlg.h"
 
@@ -563,6 +565,10 @@ VIEWER_MENU_4ABOUT=About...
                 _wm->translateString("VIEWER_MENU_BOOKMARK_LIST", "Bookmarks..."),
                 LVImageSourceRef(),
                 LVFontRef() ) );
+    menu_win->addItem( new CRMenuItem( menu_win, MCMD_SEARCH,
+                _wm->translateString("VIEWER_MENU_SEARCH", "Search..."),
+                LVImageSourceRef(),
+                LVFontRef() ) );
     menu_win->addItem( new CRMenuItem( menu_win, MCMD_SETTINGS,
                 _wm->translateString("VIEWER_MENU_SETTINGS", "Settings..."),
                 LVImageSourceRef(),
@@ -586,6 +592,20 @@ void V3DocViewWin::showGoToPageDialog()
             MCMD_GO_PAGE_APPLY, 1, _docview->getPageCount() );
     }
     dlg->setAccelerators( getDialogAccelerators() );
+    _wm->activateWindow( dlg );
+}
+
+void V3DocViewWin::showSearchDialog()
+{
+    lvRect rc = _wm->getScreen()->getRect();
+    int h_margin = rc.width() / 12;
+    int v_margin = rc.height() / 12;
+    rc.left += h_margin;
+    rc.right -= h_margin;
+    rc.bottom -= v_margin;
+    rc.top += rc.height() / 2;
+    _searchPattern.clear();
+    CRScreenKeyboard * dlg = new CRScreenKeyboard( _wm, MCMD_SEARCH_FINDNEXT, lString16(L"Search"), _searchPattern, rc );
     _wm->activateWindow( dlg );
 }
 
@@ -673,6 +693,9 @@ lString16 getDocAuthors( ldomDocument * doc, const char * path, const char * del
 void V3DocViewWin::showAboutDialog()
 {
     lString16 title = L"Cool Reader ";
+#ifndef PACKAGE_VERSION
+#define PACKAGE_VERSION "3.0"
+#endif
     title << Utf8ToUnicode(lString8(PACKAGE_VERSION));
 
     lString8 txt;
@@ -728,6 +751,20 @@ void V3DocViewWin::showAboutDialog()
     _wm->activateWindow( dlg );
 }
 
+bool V3DocViewWin::findText( lString16 pattern )
+{
+    if ( pattern.empty() )
+        return false;
+    LVArray<ldomWord> words;
+    if ( _docview->getDocument()->findText( pattern, true, -1, -1, words, 2000 ) ) {
+        _docview->selectWords( words );
+        CRSelNavigationDialog * dlg = new CRSelNavigationDialog( _wm, this );
+        _wm->activateWindow( dlg );
+        return true;
+    }
+    return false;
+}
+
 /// returns true if command is processed
 bool V3DocViewWin::onCommand( int command, int params )
 {
@@ -779,6 +816,14 @@ bool V3DocViewWin::onCommand( int command, int params )
         activate_dict( _wm, this, _t9encoding, *_dict );
         return true;
 #endif
+    case MCMD_SEARCH:
+        showSearchDialog();
+        return true;
+    case MCMD_SEARCH_FINDNEXT:
+        if ( !_searchPattern.empty() && params ) {
+            findText( _searchPattern );
+        }
+        return true;
     case MCMD_ABOUT:
         showAboutDialog();
         return true;
