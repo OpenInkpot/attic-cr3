@@ -1,3 +1,9 @@
+cr3 (3.0.17-10) unstable; urgency=low
+
+  * Customizable virtual keyboard layouts
+
+ -- Vadim Lopatin <vadim.lopatin@coolreader.org>  Sun, 22 Feb 2009 16:15:00 +0300
+
 cr3 (3.0.17-9) unstable; urgency=low
 
   * Add Text Search feature with on-screen keyboard 
