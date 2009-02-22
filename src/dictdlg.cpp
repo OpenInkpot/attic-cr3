@@ -18,8 +18,6 @@
 #include "t9encoding.h"
 
 
-// to exclude short words from search (requested by LVD)
-#define DICT_MIN_WORD_LENGTH 3
 
 //TODO: place TinyDictionary to separate file
 CRTinyDict::CRTinyDict( const lString16& config )
@@ -105,7 +103,7 @@ lString8 CRTinyDict::translate(const lString8 & w)
 
 
 
-
+#define DICT_MIN_WORD_LENGTH 3
 
 class WordWithRanges
 {
@@ -150,22 +148,22 @@ public:
 
 class wordlist {
     LVDocView& docview_;
+	const TEncoding& encoding_;
     LVPtrVector<WordWithRanges> _words;
 public:
-
-    wordlist(LVDocView& docview, const TEncoding& encoding) :
-        docview_(docview) 
-    {
+    void init()
+	{
+		_words.clear();
         //ldomDocument * doc = docview.getDocument();
         int pageIndex = -1; //docview.getCurPage();
-        LVRef<ldomXRange> range = docview.getPageDocumentRange( pageIndex );
+        LVRef<ldomXRange> range = docview_.getPageDocumentRange( pageIndex );
         crtrace trace;
         if( !range.isNull() ) {
             LVArray<ldomWord> words;
             range->getRangeWords(words);
             for ( int i=0; i<words.length(); i++ ) {
                 lString16 w = words[i].getText();
-                lString8 encoded = encoding.encode_string( w );
+                lString8 encoded = encoding_.encode_string( w );
                 if ( w.length() < DICT_MIN_WORD_LENGTH )
                     continue;
                 /*
@@ -184,6 +182,12 @@ public:
                     _words.add( new WordWithRanges( w, encoded, words[i] ) ); // add new word
             }
         }
+	}
+
+    wordlist(LVDocView& docview, const TEncoding& encoding) :
+        docview_(docview), encoding_( encoding )
+    {
+		init();
     }
 
     void match( const lString8& prefix, LVArray<WordWithRanges *> & result )
@@ -209,22 +213,6 @@ public:
     }
 };
 
-void
-init_keytable(LVArray<lString16>& keytable){
-#define DEFKEY(x)  keytable.add(lString16(x))
-DEFKEY(L" "); // 0 and 9 are STUBs
-DEFKEY(L"abc");
-DEFKEY(L"def");
-DEFKEY(L"ghi");
-DEFKEY(L"jkl");
-DEFKEY(L"mno");
-DEFKEY(L"pqrs");
-DEFKEY(L"tuv");
-DEFKEY(L"wxyz");
-DEFKEY(L".,"); // 9 STUB
-#undef DEFKEY
-};
-
 class selector {
     wordlist words_;
     int current_;
@@ -236,6 +224,7 @@ class selector {
     int repeat_;
     int last_;
 public:
+	void reinit() { words_.init(); candidates_.clear(); }
     lString8 getPrefix() { return prefix_; }
     selector(LVDocView& docview, const TEncoding& encoding) : 
         words_(docview, encoding), 
@@ -317,178 +306,177 @@ public:
 };
 
 
-
-class DictWindow;
-
-class Article : public  CRViewDialog {
-    DictWindow * parent_;
-public:
-    Article(CRGUIWindowManager * wm, lString16 title, lString8 text, lvRect rect, DictWindow * parent) 
-    : CRViewDialog(wm, title, text, rect, true, true )
-    , parent_( parent )
-    {
-    }
-
-    virtual bool onCommand( int command, int params = 0 );
-};
-
-//typedef Dictionary dict_type;
-//LVRef<dict_type> dict_;
-
-
-class DictWindow : public BackgroundFitWindow
+class CRT9Keyboard : public BackgroundFitWindow
 {
+	int _command;
+	lString16 & _buf;
+    TEncoding encoding_;
     selector selector_;
-    const TEncoding& encoding_;
-    CRDictionary & dict_;
 protected:
-    virtual void draw()
-    {
-        BackgroundFitWindow::draw();
-        CRMenuSkinRef skin = _wm->getSkin()->getMenuSkin( L"#t9input" );
-        CRRectSkinRef shortcutSkin = skin->getItemShortcutSkin();
-        CRRectSkinRef itemSkin = skin->getItemSkin();
-        CRRectSkinRef clientSkin = skin->getClientSkin();
-        LVDrawBuf * buf = _wm->getScreen()->getCanvas().get();
-        skin->draw( *buf, _rect );
-        lString16 prompt = Utf8ToUnicode(selector_.getPrefix());
-        prompt << L"_";
-        skin->draw( *buf, _rect );
-        //buf->FillRect( _rect, 0xAAAAAA );
-        lvRect rect = _rect;
-        lvRect borders = skin->getBorderWidths();
-        rect.shrinkBy( borders );
-        lvRect keyRect = rect;
-        lvPoint minSizeN = shortcutSkin->getMinSize();
-        for ( int i=0; i<encoding_.length(); i++ ) {
-            lString16 txtN = lString16::itoa(i);
-            lString16 txt = encoding_[i];
-            if ( txt.empty() )
-                continue;
-            // label 0..9
-            lvPoint sz = shortcutSkin->measureTextItem( txtN );
-            keyRect.right = keyRect.left + sz.x; //borders.left + borders.right;
-            shortcutSkin->draw( *buf, keyRect );
-            shortcutSkin->drawText( *buf, keyRect, txtN );
-            keyRect.left = keyRect.right;
-            // chars (abc)
-            sz = itemSkin->measureTextItem( txt );
-            keyRect.right = keyRect.left + sz.x; //borders.left + borders.right;
-            itemSkin->draw( *buf, keyRect );
-            itemSkin->drawText( *buf, keyRect, txt );
-            keyRect.left = keyRect.right; //borders.left;
-        }
-        keyRect.right = rect.right;
-        if ( !clientSkin.isNull() && !keyRect.isEmpty() ) {
-            clientSkin->draw( *buf, keyRect );
-            clientSkin->drawText( *buf, keyRect, prompt );
-        }
-    }
+
+    virtual void draw();
 
 public:
+	void setDefaultLayout();
+	void setLayout( CRKeyboardLayoutRef layout );
 
-    DictWindow( CRGUIWindowManager * wm, V3DocViewWin * mainwin, const TEncoding& encoding, CRDictionary & dict ) :
-        BackgroundFitWindow(wm, mainwin),
-        selector_(*mainwin->getDocView(), encoding),
-        encoding_(encoding),
-        dict_(dict) {
+	CRT9Keyboard(CRGUIWindowManager * wm, CRDocViewWindow * mainwin, int id, lString16 & buffer );
 
-        this->setAccelerators( mainwin->getDialogAccelerators() );
+    virtual bool onCommand( int command, int params );
 
-        _rect = _wm->getScreen()->getRect();
-        //_rect.bottom = _rect.top;
-        _rect.top = _rect.bottom - 40;
-    }
-
-    bool onCommand( int command, int params )
-    {
-        switch ( command ) {
-            case MCMD_SELECT_0:
-            case MCMD_SELECT_1:
-            case MCMD_SELECT_2:
-            case MCMD_SELECT_3:
-            case MCMD_SELECT_4:
-            case MCMD_SELECT_5:
-            case MCMD_SELECT_6:
-            case MCMD_SELECT_7:
-            case MCMD_SELECT_8:
-            case MCMD_SELECT_9:
-                selector_.push_button( command - MCMD_SELECT_0 + '0' );
-                setDirty();
-                break;
-            case MCMD_SCROLL_FORWARD:
-                selector_.down();
-                break;
-            case MCMD_SCROLL_BACK:
-                selector_.up();
-                break;
-            case MCMD_OK:
-                {
-                    lString8 translated;
-                    lString8 output;
-                    lString16 src = selector_.get();
-                    if ( src.empty() ) {
-                        close();
-                        return true;
-                    }
-                    output = dict_.translate( UnicodeToUtf8(src) );
-                    /*
-                    if(translated.length() == 0) {
-                        output = lString8("No article for this word");
-                    } else {
-                        output = lString8("<?xml version=\"1.0\" encoding=\"UTF-8\">");
-                        output << "<FictionBook><body><code style=\"text-align: left; text-indent: 0; font-size: 22\">";
-                        output << translated;
-                        output << "</code></body></FictionBook>";
-                    };
-                    crtrace crt("article: ");
-                    crt << output;
-                    */
-                    lvRect rc = _wm->getScreen()->getRect();
-                    // TODO: not full screen?
-                    Article * article = new Article(_wm, src, output, rc, this);
-                    _wm->activateWindow( article );
-                };
-                break;
-            case MCMD_CANCEL:
-                if ( selector_.pop() ) {
-                    close();
-                    return true ;
-                }
-                setDirty();
-                break;
-        }
-        return true;
-    }
-
-    void close() {
-        CRLog::info("Closing dict");
-        _mainwin->getDocView()->clearSelection();
-        _wm->closeWindow(this);
-    };
-
-
-protected:
-    DictWindow(const DictWindow&); //non-copyable
 };
 
+const lChar16 * defT5encoding[] = {
+    L"",     // 0 STUB
+    L"abcde",  // 1
+    L"fghij",  // 2
+    L"klmno",  // 3
+    L"pqrst",  // 4
+    L"uvwxyz", // 5
+    NULL
+};
 
+void CRT9Keyboard::setDefaultLayout()
+{
+	encoding_.init(defT5encoding);
+}
 
-bool Article::onCommand( int command, int params )
+void CRT9Keyboard::setLayout( CRKeyboardLayoutRef layout )
+{
+    while ( !selector_.pop() )
+		;
+	_mainwin->getDocView()->clearSelection();
+
+	if ( !layout.isNull() ) {
+		encoding_.set( layout->tXKeyboard->getItems() );
+	}
+	if ( encoding_.length()==0 )
+		setDefaultLayout();
+	selector_.reinit();
+	setDirty();
+}
+
+CRT9Keyboard::CRT9Keyboard(CRGUIWindowManager * wm, CRDocViewWindow * mainwin, int id, lString16 & buffer )
+	: BackgroundFitWindow(wm, mainwin)
+	, _command( id )
+	, _buf( buffer )
+	, encoding_(defT5encoding)
+	, selector_(*mainwin->getDocView(), encoding_)
+{
+    _passKeysToParent = false;
+    _passCommandsToParent = false;
+
+    //this->setAccelerators( mainwin->getDialogAccelerators() );
+    setAccelerators( _wm->getAccTables().get("txkeyboard") );
+
+    _rect = _wm->getScreen()->getRect();
+    //_rect.bottom = _rect.top;
+    _rect.top = _rect.bottom - 40;
+}
+
+void CRT9Keyboard::draw()
+{
+    BackgroundFitWindow::draw();
+    CRMenuSkinRef skin = _wm->getSkin()->getMenuSkin( L"#t9input" );
+    CRRectSkinRef shortcutSkin = skin->getItemShortcutSkin();
+    CRRectSkinRef itemSkin = skin->getItemSkin();
+    CRRectSkinRef clientSkin = skin->getClientSkin();
+    LVDrawBuf * buf = _wm->getScreen()->getCanvas().get();
+    skin->draw( *buf, _rect );
+    lString16 prompt = Utf8ToUnicode(selector_.getPrefix());
+    prompt << L"_";
+    skin->draw( *buf, _rect );
+    //buf->FillRect( _rect, 0xAAAAAA );
+    lvRect rect = _rect;
+    lvRect borders = skin->getBorderWidths();
+    rect.shrinkBy( borders );
+    lvRect keyRect = rect;
+    lvPoint minSizeN = shortcutSkin->getMinSize();
+    for ( int i=0; i<encoding_.length(); i++ ) {
+        lString16 txtN = lString16::itoa(i);
+        lString16 txt = encoding_[i];
+        if ( txt.empty() )
+            continue;
+        // label 0..9
+        lvPoint sz = shortcutSkin->measureTextItem( txtN );
+        keyRect.right = keyRect.left + sz.x; //borders.left + borders.right;
+        shortcutSkin->draw( *buf, keyRect );
+        shortcutSkin->drawText( *buf, keyRect, txtN );
+        keyRect.left = keyRect.right;
+        // chars (abc)
+        sz = itemSkin->measureTextItem( txt );
+        keyRect.right = keyRect.left + sz.x; //borders.left + borders.right;
+        itemSkin->draw( *buf, keyRect );
+        itemSkin->drawText( *buf, keyRect, txt );
+        keyRect.left = keyRect.right; //borders.left;
+    }
+    keyRect.right = rect.right;
+    if ( !clientSkin.isNull() && !keyRect.isEmpty() ) {
+        clientSkin->draw( *buf, keyRect );
+        clientSkin->drawText( *buf, keyRect, prompt );
+    }
+}
+
+bool CRT9Keyboard::onCommand( int command, int params )
 {
     switch ( command ) {
-        case MCMD_CANCEL:
+        case MCMD_SELECT_0:
+        case MCMD_SELECT_1:
+        case MCMD_SELECT_2:
+        case MCMD_SELECT_3:
+        case MCMD_SELECT_4:
+        case MCMD_SELECT_5:
+        case MCMD_SELECT_6:
+        case MCMD_SELECT_7:
+        case MCMD_SELECT_8:
+        case MCMD_SELECT_9:
+            selector_.push_button( command - MCMD_SELECT_0 + '0' );
+            setDirty();
+            break;
+        case MCMD_SCROLL_FORWARD:
+            selector_.down();
+            break;
+		case MCMD_KBD_NEXTLAYOUT:
+			setLayout( _wm->getKeyboardLayouts().nextLayout() );
+			break;
+		case MCMD_KBD_PREVLAYOUT:
+			setLayout( _wm->getKeyboardLayouts().prevLayout() );
+			break;
+        case MCMD_SCROLL_BACK:
+            selector_.up();
+            break;
         case MCMD_OK:
-            parent_->close();
-            _wm->closeWindow(this);
-            return true;
-        default:
-            return CRViewDialog::onCommand( command, params ); //CRDocViewWindow::onKeyPressed(key,flags);
+            {
+                lString8 translated;
+                lString8 output;
+                lString16 src = selector_.get();
+                if ( src.empty() ) {
+					_mainwin->getDocView()->clearSelection();
+					_wm->closeWindow(this);
+                    return true;
+                }
+				CRLog::info("Closing dict");
+				_buf = src;
+				_mainwin->getDocView()->clearSelection();
+				_wm->postCommand( _command, 1 );
+				_wm->closeWindow(this);
+            };
+            break;
+        case MCMD_CANCEL:
+            if ( selector_.pop() ) {
+				_mainwin->getDocView()->clearSelection();
+				_wm->closeWindow(this);
+                return true;
+            }
+            setDirty();
+            break;
     }
+    return true;
 }
 
-void activate_dict( CRGUIWindowManager *wm, V3DocViewWin * mainwin, const TEncoding& encoding, CRDictionary & dict )
+void showT9Keyboard(CRGUIWindowManager * wm, CRDocViewWindow * mainwin, int id, lString16 & buffer)
 {
-    CRLog::info("Entering dict mode\n");
-    wm->activateWindow(new DictWindow(wm, mainwin, encoding, dict));
+	CRT9Keyboard * dlg = new CRT9Keyboard( wm, mainwin, id, buffer );
+    wm->activateWindow( dlg );
 }
+

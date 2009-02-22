@@ -63,6 +63,7 @@ protected:
         return -1;
     }
 public:
+	/// debug dump of table
     void dump()
     {
         if ( CRLog::isTraceEnabled() ) {
@@ -87,25 +88,13 @@ public:
         }
         return false;
     }
+
     /// add accelerator to table or change existing
-    bool add( int keyCode, int keyFlags, int commandId, int commandParam )
-    {
-        int index = indexOf( keyCode, keyFlags );
-        if ( index >= 0 ) {
-            // just update
-            CRGUIAccelerator * item = _items[index];
-            item->commandId = commandId;
-            item->commandParam = commandParam;
-            return false;
-        }
-        CRGUIAccelerator * item = new CRGUIAccelerator();
-        item->keyCode = keyCode;
-        item->keyFlags = keyFlags;
-        item->commandId = commandId;
-        item->commandParam = commandParam;
-        _items.add(item);
-        return true;
-    }
+    bool add( int keyCode, int keyFlags, int commandId, int commandParam );
+
+	/// add all items from another table
+	void addAll( const CRGUIAcceleratorTable & v );
+
     /// translate keycode to command, returns true if translated
     bool translate( int keyCode, int keyFlags, int & commandId, int & commandParam )
     {
@@ -191,6 +180,8 @@ class CRGUIAcceleratorTableList
 private:
     LVHashTable<lString16, CRGUIAcceleratorTableRef> _table;
 public:
+	/// add all tables
+	void addAll( const CRGUIAcceleratorTableList & v );
     /// remove all tables
     void clear() { _table.clear(); }
     /// add accelerator table definition from array
@@ -216,6 +207,72 @@ public:
     ~CRGUIAcceleratorTableList() { }
     /// reads definitions from files
     bool openFromFile( const char  * defFile, const char * mapFile );
+};
+
+class CRKeyboardLayout
+{
+	lString16Collection _items;
+public:
+	CRKeyboardLayout() { }
+	const lString16Collection & getItems() { return _items; }
+	lString16 get( int i )
+	{
+		if ( i<0 || i>= (int)_items.length() )
+			return lString16();
+		return _items[i];
+	}
+	void set( int index, lString16 chars )
+	{
+		if ( index<0 || index>20 )
+			return;
+		while ( (int)_items.length() <= index )
+			_items.add(lString16());
+		_items[ index ] = chars;
+	}
+};
+
+class CRKeyboardLayoutSet
+{
+public:
+	lString16 name;
+	LVRef<CRKeyboardLayout> vKeyboard;
+	LVRef<CRKeyboardLayout> tXKeyboard;
+	CRKeyboardLayoutSet()
+		: vKeyboard( new CRKeyboardLayout() ), tXKeyboard( new CRKeyboardLayout() )
+	{
+	}
+	CRKeyboardLayoutSet( const CRKeyboardLayoutSet & v )
+		: name( v.name), vKeyboard( v.vKeyboard ), tXKeyboard( v.tXKeyboard )
+	{
+	}
+	CRKeyboardLayoutSet & operator = ( const CRKeyboardLayoutSet & v )
+	{
+		name = v.name;
+		vKeyboard = v.vKeyboard;
+		tXKeyboard = v.tXKeyboard;
+        return *this;
+	}
+};
+
+typedef LVRef<CRKeyboardLayoutSet> CRKeyboardLayoutRef;
+
+class CRKeyboardLayoutList
+{
+    LVHashTable<lString16, CRKeyboardLayoutRef> _table;
+	CRKeyboardLayoutRef _current;
+public:
+	// get currently set layout
+	CRKeyboardLayoutRef getCurrentLayout();
+	// get next layout
+	CRKeyboardLayoutRef nextLayout();
+	// get previous layout
+	CRKeyboardLayoutRef prevLayout();
+
+	CRKeyboardLayoutRef get( lString16 name ) { return _table.get( name ); }
+	void set( lString16 name, CRKeyboardLayoutRef v ) { _table.set( name, v ); }
+	CRKeyboardLayoutList() : _table(16) { }
+    /// reads definitions from files
+    bool openFromFile( const char  * layoutFile );
 };
 
 /// i18n support interface
@@ -314,7 +371,10 @@ class CRGUIWindowManager : public CRGUIStringTranslator
         int _postedCommandParam;
         CRSkinRef _skin;
         CRGUIAcceleratorTableList _accTables;
+		CRKeyboardLayoutList _kbLayouts;
     public:
+		/// returns keyboard layouts
+		virtual CRKeyboardLayoutList & getKeyboardLayouts() { return _kbLayouts; }
         /// returns accelerator table list
         virtual CRGUIAcceleratorTableList & getAccTables() { return _accTables; }
         /// return battery status

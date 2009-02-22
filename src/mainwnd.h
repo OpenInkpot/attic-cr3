@@ -73,8 +73,10 @@ enum CRMainMenuCmd
     MCMD_CITE,
     MCMD_SEARCH,
     MCMD_SEARCH_FINDFIRST,
-    MCMD_SEARCH_FINDNEXT,
-    MCMD_SEARCH_FINDPREV,
+    MCMD_DICT_VKEYBOARD,
+    MCMD_DICT_FIND,
+    MCMD_KBD_NEXTLAYOUT,
+    MCMD_KBD_PREVLAYOUT,
 };
 
 class V3DocViewWin : public CRDocViewWindow
@@ -86,7 +88,6 @@ protected:
     lString16 _settingsFileName;
     lString16 _historyFileName;
     lString8  _css;
-    TEncoding _t9encoding;
     lString16 _dictConfig;
     lString16 _searchPattern;
 	LVRef<CRDictionary> _dict;
@@ -146,7 +147,11 @@ public:
 
     void showSearchDialog();
 
+	void showDictWithVKeyboard();
+
     bool findText( lString16 pattern );
+
+	bool findInDictionary( lString16 pattern );
 
     virtual bool onCommand( int command, int params );
 

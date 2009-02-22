@@ -21,21 +21,28 @@ bool loadKeymaps( CRGUIWindowManager & winman, const char * locations[] )
 	bool res = false;
 	for ( int i=0; locations[i]; i++ ) {
 		lString8 location( locations[i] );
+		char lastChar = location[ location.length() - 1 ];
+		if ( lastChar!='/' && lastChar!='\\' )
 #ifdef _WIN32
-		location << "\\";
+			location << "\\";
 #else
-		location << "/";
+			location << "/";
 #endif
 		lString8 def = location + "keydefs.ini";
 		lString8 map = location + "keymaps.ini";
-		if ( winman.getAccTables().openFromFile(  def.c_str(), map.c_str() ) ) {
+		lString8 layout = location + "kblayout.ini";
+		winman.getKeyboardLayouts().openFromFile( layout.c_str() );
+		CRGUIAcceleratorTableList tables;
+
+		if ( tables.openFromFile(  def.c_str(), map.c_str() ) ) {
 			res = true;
-			break;
+			winman.getAccTables().addAll( tables );
 		}
 	}
     if ( winman.getAccTables().empty() ) {
         CRLog::error("keymap files keydefs.ini and keymaps.ini were not found! please place them to ~/.crengine or /etc/cr3");
     }
+#if 0
     static const int menu_acc_table[] = {
         XK_Escape, 0, MCMD_CANCEL, 0,
         XK_Return, 0, MCMD_OK, 0, 
@@ -106,6 +113,7 @@ bool loadKeymaps( CRGUIWindowManager & winman, const char * locations[] )
     };
     if ( winman.getAccTables().get("main").isNull() )
         winman.getAccTables().add("main", default_acc_table );
+#endif
 	return res;
 }
 
