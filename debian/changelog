@@ -1,3 +1,9 @@
+cr3 (3.0.17-11) unstable; urgency=low
+
+  * Cite feature
+
+ -- Vadim Lopatin <vadim.lopatin@coolreader.org>  Mon, 23 Feb 2009 23:23:00 +0300
+
 cr3 (3.0.17-10) unstable; urgency=low
 
   * Customizable virtual keyboard layouts
