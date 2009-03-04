@@ -335,7 +335,7 @@ public:
     lString16(const lString16 & str) : pchunk(str.pchunk) { addref(); }
     /// constructor from wide c-string
     lString16(const value_type * str);
-    /// constructor from c-string
+    /// constructor from utf8 c-string
     explicit lString16(const lChar8 * str);
     /// constructor from wide character array fragment
     explicit lString16(const value_type * str, size_type count);
@@ -516,12 +516,21 @@ public:
     void parse( lString16 string, lChar16 delimiter, bool flgTrim );
     void reserve( size_t space );
     size_t add( const lString16 & str );
+    void addAll( const lString16Collection & v )
+	{
+		for ( unsigned i=0; i<v.length(); i++ )
+			add( v[i] );
+	}
     void erase(int offset, int count);
     const lString16 & at( size_t index )
     {
         return ((lString16 *)chunks)[index];
     }
     const lString16 & operator [] ( size_t index ) const
+    {
+        return ((lString16 *)chunks)[index];
+    }
+    lString16 & operator [] ( size_t index )
     {
         return ((lString16 *)chunks)[index];
     }
@@ -559,6 +568,10 @@ public:
         return ((lString8 *)chunks)[index];
     }
     const lString8 & operator [] ( size_t index ) const
+    {
+        return ((lString8 *)chunks)[index];
+    }
+    lString8 & operator [] ( size_t index )
     {
         return ((lString8 *)chunks)[index];
     }
@@ -711,6 +724,8 @@ lString16 ByteToUnicode( const lString8 & str, const lChar16 * table );
 lString16 LocalToUnicode( const lString8 & str );
 /// converts utf-8 string to wide unicode string
 lString16 Utf8ToUnicode( const lString8 & str );
+/// converts utf-8 string to wide unicode string
+lString16 Utf8ToUnicode( const char * s );
 
 /// Logger
 class CRLog

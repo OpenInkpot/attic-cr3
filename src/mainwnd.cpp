@@ -22,7 +22,17 @@
 
 #include "mainwnd.h"
 
+#ifdef _WIN32
+#define DICTD_CONF "C:\\dict\\"
+#else
+#ifdef CR_USE_JINKE
+#define DICTD_CONF "/root/crengine/dict/"
+#else
+#define DICTD_CONF "/media/sd/dict"
+#endif
+#endif
 
+#include <cri18n.h>
 
 #ifdef WITH_DICT
 #include "dictdlg.h"
@@ -104,30 +114,6 @@ const char * cr_default_skin =
 "</CR3Skin>\n";
 
 
-const lChar16 * defT9encoding[] = {
-    L"",     // 0 STUB
-    L"abc",  // 1
-    L"def",  // 2
-    L"ghi",  // 3
-    L"jkl",  // 4
-    L"mno",  // 5
-    L"pqrs", // 6
-    L"tuv",  // 7
-    L"wxyz", // 8
-    L"",      // 9 STUB
-    NULL
-};
-
-const lChar16 * defT5encoding[] = {
-    L"",     // 0 STUB
-    L"abcde",  // 1
-    L"fghij",  // 2
-    L"klmno",  // 3
-    L"pqrst",  // 4
-    L"uvwxyz", // 5
-    NULL
-};
-
 bool V3DocViewWin::loadSkin( lString16 pathname )
 {
     CRSkinRef skin;
@@ -143,7 +129,7 @@ bool V3DocViewWin::loadSkin( lString16 pathname )
 }
 
 V3DocViewWin::V3DocViewWin( CRGUIWindowManager * wm, lString16 dataDir )
-: CRDocViewWindow ( wm ), _dataDir(dataDir), _t9encoding(defT5encoding) //defT9encoding)
+: CRDocViewWindow ( wm ), _dataDir(dataDir) //defT9encoding)
 {
     CRLog::trace("V3DocViewWin()");
     LVArray<int> sizes( cr_font_sizes, sizeof(cr_font_sizes)/sizeof(int) );
@@ -339,6 +325,7 @@ bool V3DocViewWin::saveHistory( lString16 filename )
         filename = _historyFileName;
     if ( filename.empty() )
         return false;
+	_docview->exportBookmarks(lString16());//use default filename
     _historyFileName = filename;
     log << "V3DocViewWin::saveHistory(" << filename << ")";
     LVStreamRef stream = LVOpenFileStream( filename.c_str(), LVOM_WRITE );
@@ -511,7 +498,7 @@ void V3DocViewWin::showMainMenu()
     CRMenu * menu_win = new CRMenu( _wm,
         NULL, //CRMenu * parentMenu,
         1,
-        lString16(L"Main Menu"),
+        lString16(_("Main Menu")),
         LVImageSourceRef(),
         LVFontRef(),
         LVFontRef() );
@@ -525,7 +512,7 @@ VIEWER_MENU_4ABOUT=About...
 */
     menu_win->setSkinName(lString16(L"#main"));
     menu_win->addItem( new CRMenuItem( menu_win, MCMD_ABOUT,
-                _wm->translateString("VIEWER_MENU_ABOUT", "About..."),
+                _("About..."),
                 LVImageSourceRef(),
                 LVFontRef() ) );
 #if 0
@@ -535,7 +522,7 @@ VIEWER_MENU_4ABOUT=About...
                 LVFontRef() ) );
 #endif
     menu_win->addItem( new CRMenuItem( menu_win, MCMD_GO_PAGE,
-                _wm->translateString("VIEWER_MENU_GOTOPAGE", "Go to page ..."),
+                _("Go to page ..."),
                 LVImageSourceRef(),
                 LVFontRef() ) );
 #if 0
@@ -545,32 +532,30 @@ VIEWER_MENU_4ABOUT=About...
                 LVFontRef() ) );
 #endif
     menu_win->addItem( new CRMenuItem( menu_win, MCMD_RECENT_BOOK_LIST,
-                _wm->translateString("VIEWER_MENU_RECENT_BOOKS_LIST", "Open recent book..."),
+                _("Open recent book..."),
                 LVImageSourceRef(),
                 LVFontRef() ) );
 
 #ifdef WITH_DICT
     menu_win->addItem( new CRMenuItem( menu_win, MCMD_DICT,
-                _wm->translateString("VIEWER_MENU_DICTIONARY", "Dictionary..."),
+                _("Dictionary..."),
                 LVImageSourceRef(),
                 LVFontRef() ) );
 #endif
-#ifdef WITH_CITE
     menu_win->addItem( new CRMenuItem( menu_win, MCMD_CITE,
-                _wm->translateString("VIEVER_MENU_CITE", "Cite.."),
+                _("Cite.."),
                 LVImageSourceRef(),
                 LVFontRef() ) );
-#endif
     menu_win->addItem( new CRMenuItem( menu_win, MCMD_BOOKMARK_LIST,
-                _wm->translateString("VIEWER_MENU_BOOKMARK_LIST", "Bookmarks..."),
+                _("Bookmarks..."),
                 LVImageSourceRef(),
                 LVFontRef() ) );
     menu_win->addItem( new CRMenuItem( menu_win, MCMD_SEARCH,
-                _wm->translateString("VIEWER_MENU_SEARCH", "Search..."),
+                _("Search..."),
                 LVImageSourceRef(),
                 LVFontRef() ) );
     menu_win->addItem( new CRMenuItem( menu_win, MCMD_SETTINGS,
-                _wm->translateString("VIEWER_MENU_SETTINGS", "Settings..."),
+                _("Settings..."),
                 LVImageSourceRef(),
                 LVFontRef() ) );
     menu_win->setAccelerators( getMenuAccelerators() );
@@ -583,11 +568,11 @@ void V3DocViewWin::showGoToPageDialog()
     CRNumberEditDialog * dlg;
     if ( toc && toc->getChildCount()>0 ) {
         dlg = new CRTOCDialog( _wm, 
-            _wm->translateString("VIEWER_HINT_INPUTSKIPPAGENUM", "Table of contents"),
+            lString16( _("Table of contents") ),
             MCMD_GO_PAGE_APPLY,  _docview->getPageCount(), _docview );
     } else {
         dlg = new CRNumberEditDialog( _wm, 
-            _wm->translateString("VIEWER_HINT_INPUTSKIPPAGENUM", "Enter page number"),
+            lString16( _("Enter page number") ),
             lString16(), 
             MCMD_GO_PAGE_APPLY, 1, _docview->getPageCount() );
     }
@@ -605,7 +590,21 @@ void V3DocViewWin::showSearchDialog()
     rc.bottom -= v_margin;
     rc.top += rc.height() / 2;
     _searchPattern.clear();
-    CRScreenKeyboard * dlg = new CRScreenKeyboard( _wm, MCMD_SEARCH_FINDNEXT, lString16(L"Search"), _searchPattern, rc );
+    CRScreenKeyboard * dlg = new CRScreenKeyboard( _wm, MCMD_SEARCH_FINDFIRST, lString16(_("Search")), _searchPattern, rc );
+    _wm->activateWindow( dlg );
+}
+
+void V3DocViewWin::showDictWithVKeyboard()
+{
+    lvRect rc = _wm->getScreen()->getRect();
+    int h_margin = rc.width() / 12;
+    int v_margin = rc.height() / 12;
+    rc.left += h_margin;
+    rc.right -= h_margin;
+    rc.bottom -= v_margin;
+    rc.top += rc.height() / 2;
+    _searchPattern.clear();
+    CRScreenKeyboard * dlg = new CRScreenKeyboard( _wm, MCMD_DICT_FIND, lString16(_("Find in dictionary")), _searchPattern, rc );
     _wm->activateWindow( dlg );
 }
 
@@ -690,6 +689,7 @@ lString16 getDocAuthors( ldomDocument * doc, const char * path, const char * del
     return res;
 }
 
+
 void V3DocViewWin::showAboutDialog()
 {
     lString16 title = L"Cool Reader ";
@@ -703,44 +703,44 @@ void V3DocViewWin::showAboutDialog()
     txt << "<table><col width=\"25%\"/><col width=\"75%\"/>\n";
     CRPropRef props = _docview->getDocProps();
     txt << "<tr><td colspan=\"2\" style=\"font-weight: bold; text-align: center\">File info</td></tr>";
-    addPropLine( txt, "Archive name", props->getStringDef(DOC_PROP_ARC_NAME) );
-    addPropLine( txt, "Archive path", props->getStringDef(DOC_PROP_ARC_PATH) );
-    addPropLine( txt, "Archive size", props->getStringDef(DOC_PROP_ARC_SIZE) );
-    addPropLine( txt, "File name", props->getStringDef(DOC_PROP_FILE_NAME) );
-    addPropLine( txt, "File path", props->getStringDef(DOC_PROP_FILE_PATH) );
-    addPropLine( txt, "File size", props->getStringDef(DOC_PROP_FILE_SIZE) );
-    addPropLine( txt, "File format", props->getStringDef(DOC_PROP_FILE_FORMAT) );
+    addPropLine( txt, _("Archive name"), props->getStringDef(DOC_PROP_ARC_NAME) );
+    addPropLine( txt, _("Archive path"), props->getStringDef(DOC_PROP_ARC_PATH) );
+    addPropLine( txt, _("Archive size"), props->getStringDef(DOC_PROP_ARC_SIZE) );
+    addPropLine( txt, _("File name"), props->getStringDef(DOC_PROP_FILE_NAME) );
+    addPropLine( txt, _("File path"), props->getStringDef(DOC_PROP_FILE_PATH) );
+    addPropLine( txt, _("File size"), props->getStringDef(DOC_PROP_FILE_SIZE) );
+    addPropLine( txt, _("File format"), props->getStringDef(DOC_PROP_FILE_FORMAT) );
 
     lString8 bookInfo;
-    addPropLine( bookInfo, "Title", props->getStringDef(DOC_PROP_TITLE) );
-    addPropLine( bookInfo, "Author(s)", props->getStringDef(DOC_PROP_AUTHORS) );
-    addPropLine( bookInfo, "Series name", props->getStringDef(DOC_PROP_SERIES_NAME) );
-    addPropLine( bookInfo, "Series number", props->getStringDef(DOC_PROP_SERIES_NUMBER) );
-    addPropLine( bookInfo, "Date", getDocText( getDocView()->getDocument(), "/FictionBook/description/title-info/date", ", " ) );
-    addPropLine( bookInfo, "Genres", getDocText( getDocView()->getDocument(), "/FictionBook/description/title-info/genre", ", " ) );
-    addPropLine( bookInfo, "Translator", getDocText( getDocView()->getDocument(), "/FictionBook/description/title-info/translator", ", " ) );
+    addPropLine( bookInfo, _("Title"), props->getStringDef(DOC_PROP_TITLE) );
+    addPropLine( bookInfo, _("Author(s)"), props->getStringDef(DOC_PROP_AUTHORS) );
+    addPropLine( bookInfo, _("Series name"), props->getStringDef(DOC_PROP_SERIES_NAME) );
+    addPropLine( bookInfo, _("Series number"), props->getStringDef(DOC_PROP_SERIES_NUMBER) );
+    addPropLine( bookInfo, _("Date"), getDocText( getDocView()->getDocument(), "/FictionBook/description/title-info/date", ", " ) );
+    addPropLine( bookInfo, _("Genres"), getDocText( getDocView()->getDocument(), "/FictionBook/description/title-info/genre", ", " ) );
+    addPropLine( bookInfo, _("Translator"), getDocText( getDocView()->getDocument(), "/FictionBook/description/title-info/translator", ", " ) );
     if ( !bookInfo.empty() )
         txt << "<tr><td colspan=\"2\" style=\"font-weight: bold; text-align: center\">Book info</td></tr>" << bookInfo;
 
     lString8 docInfo;
-    addPropLine( docInfo, "Document author", getDocAuthors( getDocView()->getDocument(), "/FictionBook/description/document-info/author", " " ) );
-    addPropLine( docInfo, "Document date", getDocText( getDocView()->getDocument(), "/FictionBook/description/document-info/date", " " ) );
-    addPropLine( docInfo, "Document source URL", getDocText( getDocView()->getDocument(), "/FictionBook/description/document-info/src-url", " " ) );
-    addPropLine( docInfo, "OCR by", getDocText( getDocView()->getDocument(), "/FictionBook/description/document-info/src-ocr", " " ) );
-    addPropLine( docInfo, "Document version", getDocText( getDocView()->getDocument(), "/FictionBook/description/document-info/version", " " ) );
+    addPropLine( docInfo, _("Document author"), getDocAuthors( getDocView()->getDocument(), "/FictionBook/description/document-info/author", " " ) );
+    addPropLine( docInfo, _("Document date"), getDocText( getDocView()->getDocument(), "/FictionBook/description/document-info/date", " " ) );
+    addPropLine( docInfo, _("Document source URL"), getDocText( getDocView()->getDocument(), "/FictionBook/description/document-info/src-url", " " ) );
+    addPropLine( docInfo, _("OCR by"), getDocText( getDocView()->getDocument(), "/FictionBook/description/document-info/src-ocr", " " ) );
+    addPropLine( docInfo, _("Document version"), getDocText( getDocView()->getDocument(), "/FictionBook/description/document-info/version", " " ) );
     if ( !docInfo.empty() )
         txt << "<tr><td colspan=\"2\" style=\"font-weight: bold; text-align: center\">Document info</td></tr>" << docInfo;
 
     lString8 pubInfo;
-    addPropLine( pubInfo, "Publication name", getDocText( getDocView()->getDocument(), "/FictionBook/description/publish-info/book-name", " " ) );
-    addPropLine( pubInfo, "Publisher", getDocText( getDocView()->getDocument(), "/FictionBook/description/publish-info/publisher", " " ) );
-    addPropLine( pubInfo, "Publisher city", getDocText( getDocView()->getDocument(), "/FictionBook/description/publish-info/city", " " ) );
-    addPropLine( pubInfo, "Publication year", getDocText( getDocView()->getDocument(), "/FictionBook/description/publish-info/year", " " ) );
-    addPropLine( pubInfo, "ISBN", getDocText( getDocView()->getDocument(), "/FictionBook/description/publish-info/isbn", " " ) );
+    addPropLine( pubInfo, _("Publication name"), getDocText( getDocView()->getDocument(), "/FictionBook/description/publish-info/book-name", " " ) );
+    addPropLine( pubInfo, _("Publisher"), getDocText( getDocView()->getDocument(), "/FictionBook/description/publish-info/publisher", " " ) );
+    addPropLine( pubInfo, _("Publisher city"), getDocText( getDocView()->getDocument(), "/FictionBook/description/publish-info/city", " " ) );
+    addPropLine( pubInfo, _("Publication year"), getDocText( getDocView()->getDocument(), "/FictionBook/description/publish-info/year", " " ) );
+    addPropLine( pubInfo, _("ISBN"), getDocText( getDocView()->getDocument(), "/FictionBook/description/publish-info/isbn", " " ) );
     if ( !pubInfo.empty() )
         txt << "<tr><td colspan=\"2\" style=\"font-weight: bold; text-align: center\">Publication info</td></tr>" << pubInfo;
 
-    addPropLine( txt, "Custom info", getDocText( getDocView()->getDocument(), "/FictionBook/description/custom-info", " " ) );
+    addPropLine( txt, _("Custom info"), getDocText( getDocView()->getDocument(), "/FictionBook/description/custom-info", " " ) );
 
     txt << "</table>\n";
 
@@ -749,6 +749,17 @@ void V3DocViewWin::showAboutDialog()
     txt = CRViewDialog::makeFb2Xml(txt);
     CRViewDialog * dlg = new CRViewDialog( _wm, title, txt, lvRect(), true, true );
     _wm->activateWindow( dlg );
+}
+
+bool V3DocViewWin::findInDictionary( lString16 pattern )
+{
+    if ( _dict.isNull() )
+        _dict = LVRef<CRDictionary>( new CRTinyDict( Utf8ToUnicode(lString8(DICTD_CONF)) ) );
+	lString8 body = _dict->translate( UnicodeToUtf8( pattern ) );
+    lString8 txt = CRViewDialog::makeFb2Xml( body );
+    CRViewDialog * dlg = new CRViewDialog( _wm, pattern, txt, lvRect(), true, true );
+    _wm->activateWindow( dlg );
+	return true;
 }
 
 bool V3DocViewWin::findText( lString16 pattern )
@@ -799,27 +810,23 @@ bool V3DocViewWin::onCommand( int command, int params )
 
 #ifdef WITH_DICT
 
-#ifdef _WIN32
-#define DICTD_CONF "C:\\dict\\"
-#else
-#ifdef CR_USE_JINKE
-#define DICTD_CONF "/root/crengine/dict/"
-#else
-#define DICTD_CONF "/media/sd/dict"
-#endif
-#endif
 
     case MCMD_DICT:
-        CRLog::info("MCMD_DICT activated\n");
-        if ( _dict.isNull() )
-            _dict = LVRef<CRDictionary>( new CRTinyDict( Utf8ToUnicode(lString8(DICTD_CONF)) ) );
-        activate_dict( _wm, this, _t9encoding, *_dict );
+		showT9Keyboard( _wm, this, MCMD_DICT_FIND, _searchPattern );
+        return true;
+	case MCMD_DICT_VKEYBOARD: 
+		showDictWithVKeyboard();
+		return true;
+	case MCMD_DICT_FIND:
+        if ( !_searchPattern.empty() && params ) {
+            findInDictionary( _searchPattern );
+        }
         return true;
 #endif
     case MCMD_SEARCH:
         showSearchDialog();
         return true;
-    case MCMD_SEARCH_FINDNEXT:
+    case MCMD_SEARCH_FINDFIRST:
         if ( !_searchPattern.empty() && params ) {
             findText( _searchPattern );
         }

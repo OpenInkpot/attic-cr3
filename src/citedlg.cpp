@@ -15,6 +15,7 @@
 class CiteWindow : public BackgroundFitWindow
 {
     CiteSelection selector_;
+	V3DocViewWin * mainwin_;
 protected:
     virtual void draw()
     {
@@ -40,7 +41,8 @@ public:
 
 	CiteWindow( CRGUIWindowManager * wm, V3DocViewWin * mainwin) :
 		BackgroundFitWindow(wm, mainwin),
-		selector_(*mainwin->getDocView())
+		selector_(*mainwin->getDocView()),
+		mainwin_(mainwin)
     {
 
 		this->setAccelerators( mainwin->getDialogAccelerators() );
@@ -54,27 +56,58 @@ public:
 	bool onCommand( int command, int params )
 	{
 		switch ( command ) {
-			case MCMD_SELECT_0:
 			case MCMD_SELECT_1:
+                selector_.growUp();
+                setDirty();
+                break;
 			case MCMD_SELECT_2:
-			case MCMD_SELECT_3:
-			case MCMD_SELECT_4:
+                selector_.shrinkDown();
+                setDirty();
+                break;
 			case MCMD_SELECT_5:
+                selector_.moveUp();
+                setDirty();
+                break;
 			case MCMD_SELECT_6:
+                selector_.moveDown();
+                setDirty();
+                break;
+			case MCMD_SELECT_3:
+                selector_.growUpPhrase();
+                setDirty();
+                break;
+			case MCMD_SELECT_4:
+                selector_.shrinkDownPhrase();
+                setDirty();
+                break;
 			case MCMD_SELECT_7:
+                selector_.shrinkUpPhrase();
+                setDirty();
+                break;
 			case MCMD_SELECT_8:
+                selector_.growDownPhrase();
+                setDirty();
+                break;
 			case MCMD_SELECT_9:
+                selector_.shrinkUp();
+                setDirty();
+                break;
+			case MCMD_SELECT_0:
+                selector_.growDown();
+                setDirty();
 				break;
 			case MCMD_SCROLL_FORWARD:
-                selector_.stepDown();
-                setDirty();
 				break;
 			case MCMD_SCROLL_BACK:
-                selector_.stepUp();
-                setDirty();
 				break;
 			case MCMD_OK:
 				{
+					ldomXRange range;
+					selector_.getRange(range);
+					if ( !range.isNull() ) {
+						mainwin_->getDocView()->saveRangeBookmark( range, bmkt_comment, lString16() );
+					}
+					close();
 				};
 				break;
 			case MCMD_CANCEL:
