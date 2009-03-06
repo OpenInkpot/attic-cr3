@@ -14,6 +14,10 @@
 #include "cr3main.h"
 #include "mainwnd.h"
 
+#include <locale.h>
+#include <libintl.h>
+#include <cri18n.h>
+
 // XCB code ===================================================================
 
 #ifndef _WIN32
@@ -401,6 +405,7 @@ public:
 
 int main(int argc, char **argv)
 {
+
     int res = 0;
 
     {
@@ -410,6 +415,17 @@ int main(int argc, char **argv)
 #else
     CRLog::setLogLevel( CRLog::LL_ERROR );
 #endif
+
+    // gettext initialization
+    setlocale (LC_ALL, "");
+    #undef LOCALEDIR
+    #define LOCALEDIR "/usr/share/locale"
+    const char * bindres = bindtextdomain (PACKAGE, LOCALEDIR);
+    textdomain (PACKAGE);
+    CRLog::info("Initializing gettext: dir=%s, LANGUAGE=%s, DOMAIN=%s, bindtxtdomain result = %s", LOCALEDIR, getenv("LANGUAGE"), PACKAGE, bindres);
+    CRLog::info("Trying to translate: 'On'='%s'", gettext("On"));
+    CRLog::info("Trying to translate: 'About...'='%s'", gettext("About..."));
+
     #if 0
     // memory leak test
     {
