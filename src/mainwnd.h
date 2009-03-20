@@ -1,7 +1,7 @@
 //
 // C++ Interface: settings
 //
-// Description: 
+// Description:
 //
 //
 // Author: Vadim Lopatin <vadim.lopatin@coolreader.org>, (C) 2008
@@ -23,10 +23,7 @@
 #endif
 
 
-#ifdef WITH_DICT
-#include "dictdlg.h"
-#endif
-
+#include "viewdlg.h"
 
 #ifdef _WIN32
 #define XK_Return   0xFF0D
@@ -79,7 +76,7 @@ enum CRMainMenuCmd
     MCMD_KBD_PREVLAYOUT,
 };
 
-class V3DocViewWin : public CRDocViewWindow
+class V3DocViewWin : public CRViewDialog
 {
 protected:
     CRPropRef _props;
@@ -89,27 +86,21 @@ protected:
     lString16 _historyFileName;
     lString8  _css;
     lString16 _dictConfig;
-    lString16 _searchPattern;
-	LVRef<CRDictionary> _dict;
+    lString16 _bookmarkDir;
 public:
+    lString16 getBookmarkDir() { return _bookmarkDir; }
+    void setBookmarkDir( lString16 dir ) { _bookmarkDir = dir; }
     virtual void flush(); // override
     bool loadDocument( lString16 filename );
     bool loadDefaultCover( lString16 filename );
     bool loadCSS( lString16 filename );
-    bool loadSkin( lString16 pathname );
     bool loadSettings( lString16 filename );
     bool saveSettings( lString16 filename );
     bool loadHistory( lString16 filename );
     bool saveHistory( lString16 filename );
+    bool loadHistory( LVStreamRef stream );
+    bool saveHistory( LVStreamRef stream );
     bool loadDictConfig( lString16 filename );
-    CRGUIAcceleratorTableRef getMenuAccelerators()
-    {
-        return  _wm->getAccTables().get("menu");
-    }
-    CRGUIAcceleratorTableRef getDialogAccelerators()
-    {
-        return  _wm->getAccTables().get("dialog");
-    }
 
     /// returns current properties
     CRPropRef getProps() { return _props; }
@@ -133,10 +124,6 @@ public:
 
     void showMainMenu();
 
-    void showGoToPageDialog();
-
-    bool showLinksDialog();
-
     void showBookmarksMenu();
 
     void showRecentBooksMenu();
@@ -144,14 +131,6 @@ public:
     void openRecentBook( int index );
 
     void showAboutDialog();
-
-    void showSearchDialog();
-
-	void showDictWithVKeyboard();
-
-    bool findText( lString16 pattern );
-
-	bool findInDictionary( lString16 pattern );
 
     virtual bool onCommand( int command, int params );
 

@@ -373,6 +373,8 @@ class CRGUIWindowManager : public CRGUIStringTranslator
         CRGUIAcceleratorTableList _accTables;
 		CRKeyboardLayoutList _kbLayouts;
     public:
+		/// loads skin from file
+	    virtual bool loadSkin( lString16 pathname );
 		/// returns keyboard layouts
 		virtual CRKeyboardLayoutList & getKeyboardLayouts() { return _kbLayouts; }
         /// returns accelerator table list

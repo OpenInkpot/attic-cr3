@@ -1,7 +1,7 @@
 //
 // C++ Implementation: settings
 //
-// Description: 
+// Description:
 //
 //
 // Author: Vadim Lopatin <vadim.lopatin@coolreader.org>, (C) 2008
@@ -22,15 +22,6 @@
 
 #include "mainwnd.h"
 
-#ifdef _WIN32
-#define DICTD_CONF "C:\\dict\\"
-#else
-#ifdef CR_USE_JINKE
-#define DICTD_CONF "/root/crengine/dict/"
-#else
-#define DICTD_CONF "/media/sd/dict"
-#endif
-#endif
 
 #include <cri18n.h>
 
@@ -54,95 +45,23 @@
 
 DECL_DEF_CR_FONT_SIZES;
 
-const char * cr_default_skin =
-"<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n"
-"<CR3Skin>\n"
-"  <menu id=\"main\">\n"
-"        <text color=\"#000000\" face=\"Arial\" size=\"25\" bold=\"true\" italic=\"false\" valign=\"center\" halign=\"center\"/>\n"
-"        <background color=\"#AAAAAA\"/>\n"
-"        <border widths=\"0,8,8,8\"/>\n"
-"        <!--icon image=\"filename\" valign=\"\" halign=\"\"/-->\n"
-"        <title>\n"
-"            <size minvalue=\"32,0\" maxvalue=\"0,0\"/>\n"
-"            <text color=\"#000000\" face=\"Arial\" size=\"25\" bold=\"true\" italic=\"false\" valign=\"center\" halign=\"center\"/>\n"
-"            <background color=\"#AAAAAA\"/>\n"
-"            <border widths=\"4,4,4,4\"/>\n"
-"            <!--icon image=\"filename\" valign=\"\" halign=\"\"-->\n"
-"        </title>\n"
-"        <item>\n"
-"            <size minvalue=\"48,48\" maxvalue=\"0,0\"/>\n"
-"            <text color=\"#000000\" face=\"Arial\" size=\"24\" bold=\"false\" italic=\"false\" valign=\"center\" halign=\"left\"/>\n"
-"            <background image=\"std_menu_item_background.xpm\" color=\"#FFFFFF\"/>\n"
-"            <border widths=\"6,6,6,6\"/>\n"
-"            <!--icon image=\"filename\" valign=\"\" halign=\"\"-->\n"
-"        </item>\n"
-"        <shortcut>\n"
-"            <size minvalue=\"48,48\" maxvalue=\"0,0\"/>\n"
-"            <text color=\"#000000\" face=\"Arial\" size=\"24\" bold=\"false\" italic=\"false\" valign=\"center\" halign=\"center\"/>\n"
-"            <background image=\"std_menu_shortcut_background.xpm\" color=\"#FFFFFF\"/>\n"
-"            <border widths=\"6,6,6,6\"/>\n"
-"            <!--icon image=\"filename\" valign=\"\" halign=\"\"-->\n"
-"        </shortcut>\n"
-"  </menu>\n"
-"  <menu id=\"settings\">\n"
-"        <text color=\"#000000\" face=\"Arial\" size=\"25\" bold=\"true\" italic=\"false\" valign=\"center\" halign=\"center\"/>\n"
-"        <background color=\"#AAAAAA\"/>\n"
-"        <border widths=\"8,8,8,8\"/>\n"
-"        <!--icon image=\"filename\" valign=\"\" halign=\"\"/-->\n"
-"        <title>\n"
-"            <size minvalue=\"0,40\" maxvalue=\"0,0\"/>\n"
-"            <text color=\"#000000\" face=\"Arial\" size=\"28\" bold=\"true\" italic=\"false\" valign=\"center\" halign=\"center\"/>\n"
-"            <background color=\"#AAAAAA\"/>\n"
-"            <border widths=\"4,4,4,4\"/>\n"
-"            <!--icon image=\"filename\" valign=\"\" halign=\"\"-->\n"
-"        </title>\n"
-"        <item>\n"
-"            <size minvalue=\"48,48\" maxvalue=\"0,0\"/>\n"
-"            <text color=\"#000000\" face=\"Arial\" size=\"24\" bold=\"false\" italic=\"false\" valign=\"center\" halign=\"left\"/>\n"
-"            <background image=\"std_menu_item_background.xpm\" color=\"#FFFFFF\"/>\n"
-"            <border widths=\"6,6,6,6\"/>\n"
-"            <!--icon image=\"filename\" valign=\"\" halign=\"\"-->\n"
-"        </item>\n"
-"        <shortcut>\n"
-"            <size minvalue=\"48,48\" maxvalue=\"0,0\"/>\n"
-"            <text color=\"#000000\" face=\"Arial\" size=\"24\" bold=\"false\" italic=\"false\" valign=\"center\" halign=\"center\"/>\n"
-"            <background image=\"std_menu_shortcut_background.xpm\" color=\"#FFFFFF\"/>\n"
-"            <border widths=\"6,6,6,6\"/>\n"
-"            <!--icon image=\"filename\" valign=\"\" halign=\"\"-->\n"
-"        </shortcut>\n"
-"  </menu>\n"
-"</CR3Skin>\n";
-
-
-bool V3DocViewWin::loadSkin( lString16 pathname )
-{
-    CRSkinRef skin;
-    if ( !pathname.empty() )
-        skin = LVOpenSkin( pathname );
-    if ( skin.isNull() ) {
-        skin = LVOpenSimpleSkin( lString8( cr_default_skin ) );
-        _wm->setSkin( skin );
-        return false;
-    }
-    _wm->setSkin( skin );
-    return true;
-}
 
 V3DocViewWin::V3DocViewWin( CRGUIWindowManager * wm, lString16 dataDir )
-: CRDocViewWindow ( wm ), _dataDir(dataDir) //defT9encoding)
+: CRViewDialog ( wm, lString16(), lString8(), lvRect(), false, false ), _dataDir(dataDir)
 {
     CRLog::trace("V3DocViewWin()");
     LVArray<int> sizes( cr_font_sizes, sizeof(cr_font_sizes)/sizeof(int) );
+	_fullscreen = true;
     _docview->setFontSizes( sizes, true );
     _props = LVCreatePropsContainer();
     _newProps = _props;
     // TODO: move skin outside
-    lString16 skinfile = _dataDir;
-    LVAppendPathDelimiter( skinfile );
-    skinfile << L"skin";
-    lString8 s8 = UnicodeToLocal( skinfile );
-    CRLog::debug("Skin file is %s", s8.c_str() );
-    loadSkin( skinfile );
+    //lString16 skinfile = _dataDir;
+    //LVAppendPathDelimiter( skinfile );
+    //skinfile << L"skin";
+    //lString8 s8 = UnicodeToLocal( skinfile );
+    //CRLog::debug("Skin file is %s", s8.c_str() );
+    //loadSkin( skinfile );
 
 
     LVRefVec<LVImageSource> icons;
@@ -292,10 +211,8 @@ bool V3DocViewWin::loadDictConfig( lString16 filename )
     return false;
 }
 
-bool V3DocViewWin::loadHistory( lString16 filename )
+bool V3DocViewWin::loadHistory( LVStreamRef stream )
 {
-    _historyFileName = filename;
-    LVStreamRef stream = LVOpenFileStream( filename.c_str(), LVOM_READ );
     if ( stream.isNull() ) {
         return false;
     }
@@ -304,16 +221,37 @@ bool V3DocViewWin::loadHistory( lString16 filename )
     return true;
 }
 
+bool V3DocViewWin::saveHistory( LVStreamRef stream )
+{
+    if ( stream.isNull() ) {
+        CRLog::error("Cannot open history file for write" );
+        return false;
+    }
+    return _docview->getHistory()->saveToStream( stream.get() );
+}
+
+bool V3DocViewWin::loadHistory( lString16 filename )
+{
+	CRLog::trace("V3DocViewWin::loadHistory( %s )", UnicodeToUtf8(filename).c_str());
+    _historyFileName = filename;
+    LVStreamRef stream = LVOpenFileStream( filename.c_str(), LVOM_READ );
+    return loadHistory( stream );
+}
+
 void V3DocViewWin::closing()
 {
+	CRLog::trace("V3DocViewWin::closing()");
+	_dict = NULL;
     _docview->savePosition();
     saveHistory( lString16() );
 }
 
 bool V3DocViewWin::loadDocument( lString16 filename )
 {
-    if ( !_docview->LoadDocument( filename.c_str() ) )
+    if ( !_docview->LoadDocument( filename.c_str() ) ) {
+    	CRLog::error("V3DocViewWin::loadDocument( %s ) - failed!", UnicodeToUtf8(filename).c_str() );
         return false;
+    }
     _docview->restorePosition();
     return true;
 }
@@ -323,9 +261,12 @@ bool V3DocViewWin::saveHistory( lString16 filename )
     crtrace log;
     if ( filename.empty() )
         filename = _historyFileName;
-    if ( filename.empty() )
+    if ( filename.empty() ) {
+        CRLog::info("Cannot write history file - no file name specified");
         return false;
-	_docview->exportBookmarks(lString16());//use default filename
+    }
+    CRLog::debug("Exporting bookmarks to %s", UnicodeToUtf8(_bookmarkDir).c_str());
+    _docview->exportBookmarks(_bookmarkDir); //use default filename
     _historyFileName = filename;
     log << "V3DocViewWin::saveHistory(" << filename << ")";
     LVStreamRef stream = LVOpenFileStream( filename.c_str(), LVOM_WRITE );
@@ -349,11 +290,10 @@ bool V3DocViewWin::saveHistory( lString16 filename )
 #endif
     }
     if ( stream.isNull() ) {
-        lString8 fn = UnicodeToUtf8( filename );
-        CRLog::error("Cannot open history file %s for write", fn.c_str() );
-        return false;
+    	CRLog::error("Error while creating history file %s - position will be lost", UnicodeToUtf8(filename).c_str() );
+    	return false;
     }
-    return _docview->getHistory()->saveToStream( stream.get() );
+    return saveHistory( stream );
 }
 
 void V3DocViewWin::flush()
@@ -512,7 +452,7 @@ VIEWER_MENU_4ABOUT=About...
 */
     menu_win->setSkinName(lString16(L"#main"));
     menu_win->addItem( new CRMenuItem( menu_win, MCMD_ABOUT,
-                _("About..."),
+                _("About"),
                 LVImageSourceRef(),
                 LVFontRef() ) );
 #if 0
@@ -522,7 +462,7 @@ VIEWER_MENU_4ABOUT=About...
                 LVFontRef() ) );
 #endif
     menu_win->addItem( new CRMenuItem( menu_win, MCMD_GO_PAGE,
-                _("Go to page ..."),
+                _("Go to page"),
                 LVImageSourceRef(),
                 LVFontRef() ) );
 #if 0
@@ -531,91 +471,38 @@ VIEWER_MENU_4ABOUT=About...
                 LVImageSourceRef(),
                 LVFontRef() ) );
 #endif
+
+#if USE_JINKE_USER_DATA!=1
     menu_win->addItem( new CRMenuItem( menu_win, MCMD_RECENT_BOOK_LIST,
-                _("Open recent book..."),
+                _("Open recent book"),
                 LVImageSourceRef(),
                 LVFontRef() ) );
+#endif
 
 #ifdef WITH_DICT
     menu_win->addItem( new CRMenuItem( menu_win, MCMD_DICT,
-                _("Dictionary..."),
+                _("Dictionary"),
                 LVImageSourceRef(),
                 LVFontRef() ) );
 #endif
     menu_win->addItem( new CRMenuItem( menu_win, MCMD_CITE,
-                _("Cite.."),
+                _("Cite"),
                 LVImageSourceRef(),
                 LVFontRef() ) );
     menu_win->addItem( new CRMenuItem( menu_win, MCMD_BOOKMARK_LIST,
-                _("Bookmarks..."),
+                _("Bookmarks"),
                 LVImageSourceRef(),
                 LVFontRef() ) );
     menu_win->addItem( new CRMenuItem( menu_win, MCMD_SEARCH,
-                _("Search..."),
+                _("Search"),
                 LVImageSourceRef(),
                 LVFontRef() ) );
     menu_win->addItem( new CRMenuItem( menu_win, MCMD_SETTINGS,
-                _("Settings..."),
+                _("Settings"),
                 LVImageSourceRef(),
                 LVFontRef() ) );
     menu_win->setAccelerators( getMenuAccelerators() );
     _wm->activateWindow( menu_win );
-}
-
-void V3DocViewWin::showGoToPageDialog()
-{
-    LVTocItem * toc = _docview->getToc();
-    CRNumberEditDialog * dlg;
-    if ( toc && toc->getChildCount()>0 ) {
-        dlg = new CRTOCDialog( _wm, 
-            lString16( _("Table of contents") ),
-            MCMD_GO_PAGE_APPLY,  _docview->getPageCount(), _docview );
-    } else {
-        dlg = new CRNumberEditDialog( _wm, 
-            lString16( _("Enter page number") ),
-            lString16(), 
-            MCMD_GO_PAGE_APPLY, 1, _docview->getPageCount() );
-    }
-    dlg->setAccelerators( getDialogAccelerators() );
-    _wm->activateWindow( dlg );
-}
-
-void V3DocViewWin::showSearchDialog()
-{
-    lvRect rc = _wm->getScreen()->getRect();
-    int h_margin = rc.width() / 12;
-    int v_margin = rc.height() / 12;
-    rc.left += h_margin;
-    rc.right -= h_margin;
-    rc.bottom -= v_margin;
-    rc.top += rc.height() / 2;
-    _searchPattern.clear();
-    CRScreenKeyboard * dlg = new CRScreenKeyboard( _wm, MCMD_SEARCH_FINDFIRST, _16("Search"), _searchPattern, rc );
-    _wm->activateWindow( dlg );
-}
-
-void V3DocViewWin::showDictWithVKeyboard()
-{
-    lvRect rc = _wm->getScreen()->getRect();
-    int h_margin = rc.width() / 12;
-    int v_margin = rc.height() / 12;
-    rc.left += h_margin;
-    rc.right -= h_margin;
-    rc.bottom -= v_margin;
-    rc.top += rc.height() / 2;
-    _searchPattern.clear();
-    CRScreenKeyboard * dlg = new CRScreenKeyboard( _wm, MCMD_DICT_FIND, _16("Find in dictionary"), _searchPattern, rc );
-    _wm->activateWindow( dlg );
-}
-
-bool V3DocViewWin::showLinksDialog()
-{
-    CRLinksDialog * dlg = CRLinksDialog::create( _wm, this );
-    if ( !dlg )
-        return false;
-    dlg->setAccelerators( getMenuAccelerators() );
-    _wm->activateWindow( dlg );
-    return true;
 }
 
 void addPropLine( lString8 & buf, const char * description, const lString16 & value )
@@ -689,6 +576,11 @@ lString16 getDocAuthors( ldomDocument * doc, const char * path, const char * del
     return res;
 }
 
+static void addInfoSection( lString8 & buf, lString8 data, const char * caption )
+{
+    if ( !data.empty() )
+        buf << "<tr><td colspan=\"2\" style=\"font-weight: bold; text-align: center\">" << caption << "</td></tr>" << data;
+}
 
 void V3DocViewWin::showAboutDialog()
 {
@@ -702,7 +594,8 @@ void V3DocViewWin::showAboutDialog()
     //=========================================================
     txt << "<table><col width=\"25%\"/><col width=\"75%\"/>\n";
     CRPropRef props = _docview->getDocProps();
-    txt << "<tr><td colspan=\"2\" style=\"font-weight: bold; text-align: center\">File info</td></tr>";
+    txt << "<tr><td colspan=\"2\" style=\"font-weight: bold; text-align: center\">" 
+        << _("File info") << "</td></tr>";
     addPropLine( txt, _("Archive name"), props->getStringDef(DOC_PROP_ARC_NAME) );
     addPropLine( txt, _("Archive path"), props->getStringDef(DOC_PROP_ARC_PATH) );
     addPropLine( txt, _("Archive size"), props->getStringDef(DOC_PROP_ARC_SIZE) );
@@ -719,8 +612,7 @@ void V3DocViewWin::showAboutDialog()
     addPropLine( bookInfo, _("Date"), getDocText( getDocView()->getDocument(), "/FictionBook/description/title-info/date", ", " ) );
     addPropLine( bookInfo, _("Genres"), getDocText( getDocView()->getDocument(), "/FictionBook/description/title-info/genre", ", " ) );
     addPropLine( bookInfo, _("Translator"), getDocText( getDocView()->getDocument(), "/FictionBook/description/title-info/translator", ", " ) );
-    if ( !bookInfo.empty() )
-        txt << "<tr><td colspan=\"2\" style=\"font-weight: bold; text-align: center\">Book info</td></tr>" << bookInfo;
+    addInfoSection( txt, bookInfo, _("Book info") );
 
     lString8 docInfo;
     addPropLine( docInfo, _("Document author"), getDocAuthors( getDocView()->getDocument(), "/FictionBook/description/document-info/author", " " ) );
@@ -728,8 +620,7 @@ void V3DocViewWin::showAboutDialog()
     addPropLine( docInfo, _("Document source URL"), getDocText( getDocView()->getDocument(), "/FictionBook/description/document-info/src-url", " " ) );
     addPropLine( docInfo, _("OCR by"), getDocText( getDocView()->getDocument(), "/FictionBook/description/document-info/src-ocr", " " ) );
     addPropLine( docInfo, _("Document version"), getDocText( getDocView()->getDocument(), "/FictionBook/description/document-info/version", " " ) );
-    if ( !docInfo.empty() )
-        txt << "<tr><td colspan=\"2\" style=\"font-weight: bold; text-align: center\">Document info</td></tr>" << docInfo;
+    addInfoSection( txt, docInfo, _("Document info") );
 
     lString8 pubInfo;
     addPropLine( pubInfo, _("Publication name"), getDocText( getDocView()->getDocument(), "/FictionBook/description/publish-info/book-name", " " ) );
@@ -737,8 +628,7 @@ void V3DocViewWin::showAboutDialog()
     addPropLine( pubInfo, _("Publisher city"), getDocText( getDocView()->getDocument(), "/FictionBook/description/publish-info/city", " " ) );
     addPropLine( pubInfo, _("Publication year"), getDocText( getDocView()->getDocument(), "/FictionBook/description/publish-info/year", " " ) );
     addPropLine( pubInfo, _("ISBN"), getDocText( getDocView()->getDocument(), "/FictionBook/description/publish-info/isbn", " " ) );
-    if ( !pubInfo.empty() )
-        txt << "<tr><td colspan=\"2\" style=\"font-weight: bold; text-align: center\">Publication info</td></tr>" << pubInfo;
+    addInfoSection( txt, pubInfo, _("Publication info") );
 
     addPropLine( txt, _("Custom info"), getDocText( getDocView()->getDocument(), "/FictionBook/description/custom-info", " " ) );
 
@@ -749,31 +639,6 @@ void V3DocViewWin::showAboutDialog()
     txt = CRViewDialog::makeFb2Xml(txt);
     CRViewDialog * dlg = new CRViewDialog( _wm, title, txt, lvRect(), true, true );
     _wm->activateWindow( dlg );
-}
-
-bool V3DocViewWin::findInDictionary( lString16 pattern )
-{
-    if ( _dict.isNull() )
-        _dict = LVRef<CRDictionary>( new CRTinyDict( Utf8ToUnicode(lString8(DICTD_CONF)) ) );
-	lString8 body = _dict->translate( UnicodeToUtf8( pattern ) );
-    lString8 txt = CRViewDialog::makeFb2Xml( body );
-    CRViewDialog * dlg = new CRViewDialog( _wm, pattern, txt, lvRect(), true, true );
-    _wm->activateWindow( dlg );
-	return true;
-}
-
-bool V3DocViewWin::findText( lString16 pattern )
-{
-    if ( pattern.empty() )
-        return false;
-    LVArray<ldomWord> words;
-    if ( _docview->getDocument()->findText( pattern, true, -1, -1, words, 2000 ) ) {
-        _docview->selectWords( words );
-        CRSelNavigationDialog * dlg = new CRSelNavigationDialog( _wm, this );
-        _wm->activateWindow( dlg );
-        return true;
-    }
-    return false;
 }
 
 /// returns true if command is processed
@@ -792,45 +657,18 @@ bool V3DocViewWin::onCommand( int command, int params )
     case MCMD_SETTINGS_ORIENTATION:
         showOrientationMenu();
         return true;
-    case MCMD_GO_PAGE:
-        showGoToPageDialog();
-        return true;
-    case MCMD_GO_LINK:
-        showLinksDialog();
-        return true;
     case MCMD_SETTINGS:
         showSettingsMenu();
         return true;
     case MCMD_RECENT_BOOK_LIST:
         showRecentBooksMenu();
         return true;
+#if USE_JINKE_USER_DATA!=1
     case MCMD_OPEN_RECENT_BOOK:
         openRecentBook( params );
         return true;
-
-#ifdef WITH_DICT
-
-
-    case MCMD_DICT:
-		showT9Keyboard( _wm, this, MCMD_DICT_FIND, _searchPattern );
-        return true;
-	case MCMD_DICT_VKEYBOARD: 
-		showDictWithVKeyboard();
-		return true;
-	case MCMD_DICT_FIND:
-        if ( !_searchPattern.empty() && params ) {
-            findInDictionary( _searchPattern );
-        }
-        return true;
 #endif
-    case MCMD_SEARCH:
-        showSearchDialog();
-        return true;
-    case MCMD_SEARCH_FINDFIRST:
-        if ( !_searchPattern.empty() && params ) {
-            findText( _searchPattern );
-        }
-        return true;
+
     case MCMD_ABOUT:
         showAboutDialog();
         return true;
@@ -849,9 +687,14 @@ bool V3DocViewWin::onCommand( int command, int params )
     case MCMD_BOOKMARK_LIST:
         showBookmarksMenu();
         return true;
+    case DCMD_ZOOM_IN:
+    case DCMD_ZOOM_OUT:
+        _props->setInt( PROP_FONT_SIZE, _docview->getFontSize() );
+        saveSettings( lString16() );
+        return true;
     default:
         // do nothing
         ;
     }
-    return CRDocViewWindow::onCommand( command, params );
+    return CRViewDialog::onCommand( command, params );
 }

@@ -6,6 +6,7 @@
 
 #include <crgui.h>
 #include <crtrace.h>
+#include <cri18n.h>
 
 #include "mainwnd.h"
 #include "bgfit.h"
@@ -24,7 +25,7 @@ protected:
         CRRectSkinRef skin = _wm->getSkin()->getWindowSkin( L"#dialog" )->getClientSkin();
         LVDrawBuf * buf = _wm->getScreen()->getCanvas().get();
         skin->draw( *buf, _rect );
-        lString16 prompt(L"Select text");
+        lString16 prompt(_16("Select text"));
         buf->FillRect( _rect, 0xAAAAAA );
         lvRect keyRect = _rect;
         lvRect borders = skin->getBorderWidths();

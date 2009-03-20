@@ -11,9 +11,6 @@
 
 *******************************************************/
 
-#if CR_EMULATE_GETTEXT!=1
-    #include <libintl.h>
-#endif
 
 #include "../include/cri18n.h"
 #include "../include/lvstream.h"
@@ -60,15 +57,15 @@ void CRMoFileTranslator::add( lString8 src, lString8 dst )
 
 static int compareItems( const void * p1, const void * p2 )
 {
-	CRMoFileTranslator::Item * s1 = (CRMoFileTranslator::Item*)p1;
-	CRMoFileTranslator::Item * s2 = (CRMoFileTranslator::Item*)p2;
+	CRMoFileTranslator::Item * s1 = *((CRMoFileTranslator::Item**)p1);
+	CRMoFileTranslator::Item * s2 = *((CRMoFileTranslator::Item**)p2);
 	return s1->src.compare( s2->src );
 }
 
 void CRMoFileTranslator::sort()
 {
 	if ( _list.length()>0 )
-		qsort( (void*)(_list.get()), _list.length(), sizeof(Item*), compareItems );
+		qsort( _list.get(), _list.length(), sizeof(Item*), compareItems );
 }
 
 const char * CRMoFileTranslator::getText( const char * src )
@@ -106,8 +103,10 @@ static void reverse( lUInt32 & n )
 bool CRMoFileTranslator::openMoFile( lString16 fileName )
 {
 	LVStreamRef stream = LVOpenFileStream( fileName.c_str(), LVOM_READ );
-	if ( stream.isNull() )
+	if ( stream.isNull() ) {
+		CRLog::error("CRMoFileTranslator::openMoFile() - Cannot open .mo file");
 		return false;
+	}
 	bool rev = false;
 	lUInt32 magic, revision, count, srcOffset, dstOffset;
 	if ( !stream->Read( &magic ) )
@@ -119,7 +118,7 @@ bool CRMoFileTranslator::openMoFile( lString16 fileName )
 		CRLog::error( "Magic number doesn't match for MO file" );
 		return false;
 	}
-	if ( !stream->Read( &revision ) || !stream->Read( &count ) 
+	if ( !stream->Read( &revision ) || !stream->Read( &count )
 		|| !stream->Read( &srcOffset ) || !stream->Read( &dstOffset ) ) {
 		CRLog::error( "Error reading MO file" );
 		return false;
@@ -161,7 +160,7 @@ bool CRMoFileTranslator::openMoFile( lString16 fileName )
 			if ( stream->SetPos( offset )!=offset )
 				return false;
 			s.append( len, ' ' );
-			if ( stream->Read( s.modify(), len, &bytesRead )!=LVOM_READ || bytesRead!=len )
+			if ( stream->Read( s.modify(), len, &bytesRead )!=LVERR_OK || bytesRead!=len )
 				return false;
 		}
 		src.add( s );
@@ -176,7 +175,7 @@ bool CRMoFileTranslator::openMoFile( lString16 fileName )
 			if ( stream->SetPos( offset )!=offset )
 				return false;
 			s.append( len, ' ' );
-			if ( stream->Read( s.modify(), len, &bytesRead )!=LVOM_READ || bytesRead!=len )
+			if ( stream->Read( s.modify(), len, &bytesRead )!=LVERR_OK || bytesRead!=len )
 				return false;
 		}
 		add( src[i], s );

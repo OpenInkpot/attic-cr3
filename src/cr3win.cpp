@@ -192,7 +192,9 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
             {
                 if (wParam!=SIZE_MINIMIZED)
                 {
-                    CRWin32WindowManager::instance->setSize( LOWORD(lParam), HIWORD(lParam) );
+					RECT rect;
+					::GetClientRect(hWnd, &rect );
+					CRWin32WindowManager::instance->setSize( rect.right-rect.left, rect.bottom-rect.top );
                     needUpdate = true;
                 }
             }
@@ -376,6 +378,7 @@ int APIENTRY WinMain(HINSTANCE hInstance,
 		loadKeymaps( winman, keymap_locations );
 		
 
+        winman.loadSkin( LVExtractPath(LocalToUnicode(lString8(exe_fn))) + L"skin" );
         V3DocViewWin * main_win = new V3DocViewWin( &winman, LVExtractPath(LocalToUnicode(lString8(exe_fn))) );
         main_win->getDocView()->setBackgroundColor(0xFFFFFF);
         main_win->getDocView()->setTextColor(0x000000);

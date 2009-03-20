@@ -1,7 +1,7 @@
 //
 // C++ Implementation: settings
 //
-// Description: 
+// Description:
 //
 //
 // Author: Vadim Lopatin <vadim.lopatin@coolreader.org>, (C) 2008
@@ -30,7 +30,7 @@ CRMenu * CRSettingsMenu::createOrientationMenu( CRMenu * mainMenu, CRPropRef pro
 
     LVFontRef valueFont( fontMan->GetFont( VALUE_FONT_SIZE, 300, true, css_ff_sans_serif, lString8("Arial")) );
     CRMenu * orientationMenu = new CRMenu(_wm, mainMenu, mm_Orientation,
-            _wm->translateString("VIEWER_MENU_ORIENTATION", "Page orientation"),
+            _16("Page orientation"),
                             LVImageSourceRef(), LVFontRef(), valueFont, props, PROP_ROTATE_ANGLE );
     addMenuItems( orientationMenu, page_orientations );
     return orientationMenu;
@@ -45,15 +45,15 @@ CRMenu * CRSettingsMenu::createFontSizeMenu( CRMenu * mainMenu, CRPropRef props 
     LVFontRef valueFont( fontMan->GetFont( VALUE_FONT_SIZE, 300, true, css_ff_sans_serif, lString8("Arial")) );
     CRMenu * fontSizeMenu;
     fontSizeMenu = new CRMenu(_wm, mainMenu, mm_FontSize,
-                                _wm->translateString("VIEWER_MENU_FONT_SIZE", "Default font size"),
+                                _("Default font size"),
                                         LVImageSourceRef(), LVFontRef(), valueFont, props, PROP_FONT_SIZE );
 	for ( unsigned i=0; i<sizeof(cr_font_sizes)/sizeof(int); i++ ) {
-		char name[32];
+		//char name[32];
 		char defvalue[32];
-		sprintf( name, "VIEWER_DLG_FONT_SIZE_%d", cr_font_sizes[i] );
+		//sprintf( name, "VIEWER_DLG_FONT_SIZE_%d", cr_font_sizes[i] );
 		sprintf( defvalue, "%d", cr_font_sizes[i] );
 		fontSizeMenu->addItem( new CRMenuItem( fontSizeMenu, 0,
-								_wm->translateString(name, defvalue),
+								lString16(defvalue),
 										LVImageSourceRef(), fontMan->GetFont( cr_font_sizes[i], 300, false, css_ff_sans_serif, fontFace), lString16::itoa(cr_font_sizes[i]).c_str()  ) );
 	}
     fontSizeMenu->setAccelerators( _menuAccelerators );
@@ -66,7 +66,7 @@ void CRSettingsMenu::addMenuItems( CRMenu * menu, item_def_t values[] )
     for ( int i=0; values[i].translate_default; i++)
         menu->addItem( new CRMenuItem( menu, i,
             lString16(values[i].translate_default),
-            LVImageSourceRef(), 
+            LVImageSourceRef(),
             LVFontRef(), Utf8ToUnicode(lString8(values[i].value)).c_str() ) );
     menu->setAccelerators( _menuAccelerators );
     menu->setSkinName(lString16(L"#settings"));
@@ -155,15 +155,17 @@ CRSettingsMenu::CRSettingsMenu( CRGUIWindowManager * wm, CRPropRef newProps, int
 	item_def_t page_margins[] = {
 		{"0", "0"},
 		{"5", "5"},
+		{"8", "8"},
 		{"10", "10"},
 		{"15", "15"},
 		{"20", "20"},
 		{"25", "25"},
+		{"30", "30"},
 		{NULL, NULL},
 	};
 
-	
-	
+
+
 	CRLog::trace("showSettingsMenu() - %d property values found", props->getCount() );
 
         setSkinName(lString16(L"#settings"));
@@ -183,7 +185,7 @@ CRSettingsMenu::CRSettingsMenu( CRGUIWindowManager * wm, CRPropRef newProps, int
         int i;
         for ( i=0; i<(int)list.length(); i++ ) {
             fontFaceMenu->addItem( new CRMenuItem( fontFaceMenu, i,
-                                    list[i], LVImageSourceRef(), fontMan->GetFont( MENU_FONT_SIZE, 300, 
+                                    list[i], LVImageSourceRef(), fontMan->GetFont( MENU_FONT_SIZE, 300,
 									false, css_ff_sans_serif, UnicodeToUtf8(list[i])), list[i].c_str() ) );
         }
         fontFaceMenu->setAccelerators( _menuAccelerators );
@@ -269,6 +271,34 @@ CRSettingsMenu::CRSettingsMenu( CRGUIWindowManager * wm, CRPropRef newProps, int
         addMenuItems( kerningMenu, kerning_options );
         mainMenu->addItem( kerningMenu );
 
+        //====== Margins ==============
+        CRMenu * marginsMenu = new CRMenu(_wm, mainMenu, mm_PageMargins,
+                _("Page margins"),
+                                LVImageSourceRef(), LVFontRef(), valueFont, props );
+        CRMenu * marginsMenuTop = new CRMenu(_wm, marginsMenu, mm_PageMarginTop,
+                _("Top margin"),
+                 LVImageSourceRef(), LVFontRef(), valueFont, props, PROP_PAGE_MARGIN_TOP );
+        addMenuItems( marginsMenuTop, page_margins );
+        marginsMenu->addItem( marginsMenuTop );
+        CRMenu * marginsMenuBottom = new CRMenu(_wm, marginsMenu, mm_PageMarginBottom,
+                _("Bottom margin"),
+                 LVImageSourceRef(), LVFontRef(), valueFont, props, PROP_PAGE_MARGIN_BOTTOM );
+        addMenuItems( marginsMenuBottom, page_margins );
+        marginsMenu->addItem( marginsMenuBottom );
+        CRMenu * marginsMenuLeft = new CRMenu(_wm, marginsMenu, mm_PageMarginLeft,
+                _("Left margin"),
+                 LVImageSourceRef(), LVFontRef(), valueFont, props, PROP_PAGE_MARGIN_LEFT );
+        addMenuItems( marginsMenuLeft, page_margins );
+        marginsMenu->addItem( marginsMenuLeft );
+        CRMenu * marginsMenuRight = new CRMenu(_wm, marginsMenu, mm_PageMarginRight,
+                _("Right margin"),
+                 LVImageSourceRef(), LVFontRef(), valueFont, props, PROP_PAGE_MARGIN_RIGHT );
+        addMenuItems( marginsMenuRight, page_margins );
+        marginsMenu->addItem( marginsMenuRight );
+		marginsMenu->setAccelerators( _menuAccelerators );
+		marginsMenu->setSkinName(lString16(L"#settings"));
+        mainMenu->addItem( marginsMenu );
+        
 }
 
 

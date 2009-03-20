@@ -293,7 +293,7 @@ lvPoint LVDocView::rotatePoint( lvPoint & pt, bool winToDoc )
 /// sets page margins
 void LVDocView::setPageMargins( const lvRect & rc )
 {
-    if ( m_pageMargins.left + m_pageMargins.right != rc.left + rc.right 
+    if ( m_pageMargins.left + m_pageMargins.right != rc.left + rc.right
             || m_pageMargins.top + m_pageMargins.bottom != rc.top + rc.bottom )
         requestRender();
     else
@@ -708,7 +708,7 @@ void LVDocView::drawCoverTo( LVDrawBuf * drawBuf, lvRect & rc )
         CRLog::trace("drawCoverTo() - drawing image");
         drawBuf->Draw( defcover, imgrc.left + (imgrc.width()-dst_dx)/2, imgrc.top + (imgrc.height()-dst_dy)/2, dst_dx, dst_dy );
         CRLog::trace("drawCoverTo() - drawing text");
-        txform.Draw( drawBuf, (rc.right + rc.left - title_w) / 2, 
+        txform.Draw( drawBuf, (rc.right + rc.left - title_w) / 2,
             (rc.bottom + rc.top - h) / 2, NULL );
         CRLog::trace("drawCoverTo() - done");
         return;
@@ -1316,7 +1316,7 @@ void LVDocView::drawPageTo(LVDrawBuf * drawbuf, LVRendPageInfo & page, lvRect * 
     clip.bottom = pageRect->top + m_pageMargins.top + height + headerHeight + offset;
     clip.right = pageRect->left + pageRect->width() - m_pageMargins.right;
     if ( page.type==PAGE_TYPE_COVER )
-        clip.top = pageRect->top + m_pageMargins.bottom;
+        clip.top = pageRect->top + m_pageMargins.top;
     if ( m_pageHeaderInfo && page.type!=PAGE_TYPE_COVER) {
         int phi = m_pageHeaderInfo;
         if ( getVisiblePageCount()==2 ) {
@@ -1342,8 +1342,8 @@ void LVDocView::drawPageTo(LVDrawBuf * drawbuf, LVRendPageInfo & page, lvRect * 
         if ( page.type == PAGE_TYPE_COVER ) {
             lvRect rc = *pageRect;
             drawbuf->SetClipRect(&rc);
-            if ( m_pageMargins.bottom > m_pageMargins.top )
-                rc.bottom -= m_pageMargins.bottom - m_pageMargins.top;
+            //if ( m_pageMargins.bottom > m_pageMargins.top )
+            //    rc.bottom -= m_pageMargins.bottom - m_pageMargins.top;
             /*
             rc.left += m_pageMargins.left / 2;
             rc.top += m_pageMargins.bottom / 2;
@@ -1451,7 +1451,7 @@ void LVDocView::Draw( LVDrawBuf & drawbuf, int position, bool rotate  )
             drawbuf.GetClipRect( &rc );
             rc.top -= position;
             rc.bottom -= position;
-            rc.top += m_pageMargins.bottom;
+            rc.top += m_pageMargins.top;
             rc.bottom -= m_pageMargins.bottom;
             rc.left += m_pageMargins.left;
             rc.right -= m_pageMargins.right;
@@ -2139,6 +2139,7 @@ void LVDocView::savePosition()
 /// restore last file position
 void LVDocView::restorePosition()
 {
+    CRLog::trace("LVDocView::restorePosition()");
     if ( m_filename.empty() )
         return;
     LVLock lock(getMutex());
@@ -2146,8 +2147,11 @@ void LVDocView::restorePosition()
     ldomXPointer pos = m_hist.restorePosition( m_doc, m_filename, m_filesize );
     if ( !pos.isNull() ) {
         //goToBookmark( pos );
+    	CRLog::info("LVDocView::restorePosition() - last position is found");
         _posBookmark = pos; //getBookmark();
         m_posIsSet = false;
+    } else {
+    	CRLog::info("LVDocView::restorePosition() - last position not found for file %s, size %d", UnicodeToUtf8(m_filename).c_str(), (int)m_filesize);
     }
 }
 
@@ -2275,10 +2279,10 @@ public:
     lString16 href;
     lString16 mediaType;
     lString16 id;
-    EpubItem() 
+    EpubItem()
     { }
     EpubItem( const EpubItem & v )
-        : href(v.href), mediaType(v.mediaType), id(v.id) 
+        : href(v.href), mediaType(v.mediaType), id(v.id)
     { }
     EpubItem & operator = ( const EpubItem & v )
     {
@@ -2595,25 +2599,25 @@ bool LVDocView::LoadDocument( LVStreamRef stream )
     }
 }
 
-static const char * AC_P[]  = {"p", "p", "hr", NULL}; 
-static const char * AC_COL[] = {"col", NULL}; 
-static const char * AC_LI[] = {"li", "li", "p", NULL}; 
-static const char * AC_UL[] = {"ul", "ul", "p", NULL}; 
-static const char * AC_DD[] = {"dd", "dd", "p", NULL}; 
-static const char * AC_BR[] = {"br", NULL}; 
-static const char * AC_HR[] = {"hr", NULL}; 
-static const char * AC_IMG[]= {"img", NULL}; 
-static const char * AC_TD[] = {"td", "td", "th", NULL}; 
-static const char * AC_TH[] = {"th", "th", "td", NULL}; 
-static const char * AC_TR[] = {"tr", "tr", "thead", "tfoot", "tbody", NULL}; 
-static const char * AC_DIV[] = {"div", "p", NULL}; 
-static const char * AC_TABLE[] = {"table", "p", NULL}; 
-static const char * AC_THEAD[] = {"thead", "tr", "thead", "tfoot", "tbody", NULL}; 
-static const char * AC_TFOOT[] = {"tfoot", "tr", "thead", "tfoot", "tbody", NULL}; 
-static const char * AC_TBODY[] = {"tbody", "tr", "thead", "tfoot", "tbody", NULL}; 
-static const char * AC_OPTION[] = {"option", "option", NULL}; 
-static const char * AC_PRE[] = {"pre", "pre", NULL}; 
-static const char * AC_INPUT[] = {"input", NULL}; 
+static const char * AC_P[]  = {"p", "p", "hr", NULL};
+static const char * AC_COL[] = {"col", NULL};
+static const char * AC_LI[] = {"li", "li", "p", NULL};
+static const char * AC_UL[] = {"ul", "ul", "p", NULL};
+static const char * AC_DD[] = {"dd", "dd", "p", NULL};
+static const char * AC_BR[] = {"br", NULL};
+static const char * AC_HR[] = {"hr", NULL};
+static const char * AC_IMG[]= {"img", NULL};
+static const char * AC_TD[] = {"td", "td", "th", NULL};
+static const char * AC_TH[] = {"th", "th", "td", NULL};
+static const char * AC_TR[] = {"tr", "tr", "thead", "tfoot", "tbody", NULL};
+static const char * AC_DIV[] = {"div", "p", NULL};
+static const char * AC_TABLE[] = {"table", "p", NULL};
+static const char * AC_THEAD[] = {"thead", "tr", "thead", "tfoot", "tbody", NULL};
+static const char * AC_TFOOT[] = {"tfoot", "tr", "thead", "tfoot", "tbody", NULL};
+static const char * AC_TBODY[] = {"tbody", "tr", "thead", "tfoot", "tbody", NULL};
+static const char * AC_OPTION[] = {"option", "option", NULL};
+static const char * AC_PRE[] = {"pre", "pre", NULL};
+static const char * AC_INPUT[] = {"input", NULL};
 static const char * *
 HTML_AUTOCLOSE_TABLE[] = {
     AC_INPUT,
@@ -2733,7 +2737,7 @@ bool LVDocView::ParseDocument( )
 
     /// plain text format
     if ( parser==NULL ) {
-        
+
         //m_text_format = txt_format_pre; // DEBUG!!!
         setDocFormat( doc_format_txt );
         parser = new LVTextParser(m_stream, &writer, getTextFormatOptions()==txt_format_pre );
@@ -3165,7 +3169,7 @@ bool LVDocView::moveByPage( int delta )
     {
 		int cp = getCurPage();
 		int p = cp + delta * getVisiblePageCount();
-		goToPage( p );		
+		goToPage( p );
         return getCurPage() != cp;
     }
 }
@@ -3236,6 +3240,15 @@ bool LVDocView::exportBookmarks( lString16 filename )
 {
 	if ( m_filename.empty() )
 		return true; // no document opened
+    lChar16 lastChar = filename.lastChar();
+    lString16 dir;
+    CRLog::trace("exportBookmarks(%s)", UnicodeToUtf8(filename).c_str() );
+    if ( lastChar=='/' || lastChar=='\\' ) {
+        dir = filename;
+        CRLog::debug("Creating directory, if not exist %s", UnicodeToUtf8(dir).c_str() );
+        LVCreateDirectory( dir );
+        filename.clear();
+    }
 	if ( filename.empty() ) {
 	    CRPropRef props = getDocProps();
 	    lString16 arcname = props->getStringDef(DOC_PROP_ARC_NAME);
@@ -3247,11 +3260,18 @@ bool LVDocView::exportBookmarks( lString16 filename )
 		if ( !fpath.empty() )
 			LVAppendPathDelimiter( fpath );
 		if ( !arcname.empty() ) {
-			filename = arcpath + arcname + L"." + fname + L".bmk.txt";
+            if ( dir.empty() )
+                dir = arcpath;
+			filename = arcname + L"." + fname + L".bmk.txt";
 		} else {
-			filename = fpath + fname + L".bmk.txt";
+            if ( dir.empty() )
+                dir = fpath;
+			filename = fname + L".bmk.txt";
 		}
+        LVAppendPathDelimiter( dir );
+        filename = dir + filename;
 	}
+    CRLog::debug("Exported bookmark filename: %s", UnicodeToUtf8(filename).c_str());
 	CRFileHistRecord * rec = getCurrentFileHistRecord();
 	if ( !rec )
 		return false;
@@ -3264,7 +3284,7 @@ bool LVDocView::exportBookmarks( lString16 filename )
 			if ( sz>0 && sz<MAX_EXPORT_BOOKMARKS_SIZE ) {
 				oldContent.append( sz, ' ' );
 				lvsize_t bytesRead = 0;
-				if ( is->Read( oldContent.modify(), sz, &bytesRead )!=LVERR_OK || bytesRead!=sz )
+				if ( is->Read( oldContent.modify(), sz, &bytesRead )!=LVERR_OK || (int)bytesRead!=sz )
 					oldContent.clear();
 			}
 		}
@@ -3525,11 +3545,11 @@ void LVDocView::propsUpdateDefaults( CRPropRef props )
     static int def_status_line[] = { 0, 1, 2 };
     props->limitValueList( PROP_STATUS_LINE, def_status_line, 3 );
     props->limitValueList( PROP_TXT_OPTION_PREFORMATTED, bool_options_def_false, 2 );
-    static int def_margin[] = { 3, 0, 1, 2, 4 };
-    props->limitValueList( PROP_PAGE_MARGIN_TOP, def_margin, 5 );
-    props->limitValueList( PROP_PAGE_MARGIN_BOTTOM, def_margin, 5 );
-    props->limitValueList( PROP_PAGE_MARGIN_LEFT, def_margin, 5 );
-    props->limitValueList( PROP_PAGE_MARGIN_RIGHT, def_margin, 5 );
+    static int def_margin[] = { 8, 0, 5, 10, 15, 20, 25, 30 };
+    props->limitValueList( PROP_PAGE_MARGIN_TOP, def_margin, 8 );
+    props->limitValueList( PROP_PAGE_MARGIN_BOTTOM, def_margin, 8 );
+    props->limitValueList( PROP_PAGE_MARGIN_LEFT, def_margin, 8 );
+    props->limitValueList( PROP_PAGE_MARGIN_RIGHT, def_margin, 8 );
 }
 
 #define H_MARGIN 8
@@ -3540,7 +3560,7 @@ void LVDocView::setStatusMode( int newMode, bool showClock )
 #if ALLOW_BOTTOM_STATUSBAR==1
     lvRect margins( H_MARGIN, V_MARGIN, H_MARGIN, V_MARGIN/2 );
     lvRect oldMargins = _docview->getPageMargins( );
-    if (newMode==1) 
+    if (newMode==1)
         margins.bottom = STANDARD_STATUSBAR_HEIGHT + V_MARGIN/4;
 #endif
     if ( newMode==0 )
@@ -3587,6 +3607,23 @@ CRPropRef LVDocView::propsApply( CRPropRef props )
         } else if ( name==PROP_FONT_COLOR ) {
             lUInt32 textColor = props->getIntDef(PROP_FONT_COLOR, 0x000000 );
             setTextColor( textColor );
+        } else if ( name==PROP_PAGE_MARGIN_TOP || name==PROP_PAGE_MARGIN_LEFT 
+                   || name==PROP_PAGE_MARGIN_RIGHT || name==PROP_PAGE_MARGIN_BOTTOM ) {
+            lUInt32 margin = props->getIntDef(name.c_str(), 8 );
+            if ( margin<0 )
+                margin = 0;
+            if ( margin>30 )
+                margin = 30;
+            lvRect rc = getPageMargins();
+            if ( name==PROP_PAGE_MARGIN_TOP )
+                rc.top = margin;
+            else if ( name==PROP_PAGE_MARGIN_BOTTOM )
+                rc.bottom = margin;
+            else if ( name==PROP_PAGE_MARGIN_LEFT )
+                rc.left = margin;
+            else if ( name==PROP_PAGE_MARGIN_RIGHT )
+                rc.right = margin;
+            setPageMargins( rc );
         } else if ( name==PROP_FONT_FACE ) {
             setDefaultFontFace( UnicodeToUtf8(value) );
         } else if ( name==PROP_STATUS_LINE ) {

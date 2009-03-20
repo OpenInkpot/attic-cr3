@@ -1,7 +1,7 @@
 //
 // C++ Interface: settings
 //
-// Description: 
+// Description:
 //
 //
 // Author: Vadim Lopatin <vadim.lopatin@coolreader.org>, (C) 2008
@@ -41,10 +41,15 @@ enum MainMenuItems_t {
     mm_Kerning,
     mm_LandscapePages,
     mm_PreformattedText,
+    mm_PageMargins,
+    mm_PageMarginTop,
+    mm_PageMarginLeft,
+    mm_PageMarginRight,
+    mm_PageMarginBottom,
 };
 
 
-#define DECL_DEF_CR_FONT_SIZES static int cr_font_sizes[] = { 18, 20, 22, 24, 29, 33, 39, 44 }
+#define DECL_DEF_CR_FONT_SIZES static int cr_font_sizes[] = { 18, 20, 22, 24, 26, 28, 32, 38 }
 
 class CRSettingsMenu : public CRMenu
 {
