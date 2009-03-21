@@ -30,12 +30,10 @@
 
 #include <xcb/xcb.h>
 int8_t i8sample = 0;
-#define class klass
-extern "C" {
 #include <xcb/xcb_aux.h>
+extern "C" {
 #include <xcb/shm.h>
 };
-#undef class
 #include <xcb/xcb_image.h>
 #include <xcb/xcb_keysyms.h>
 #include <sys/ipc.h>
@@ -418,6 +416,7 @@ int main(int argc, char **argv)
     CRLog::setLogLevel( CRLog::LL_ERROR );
 #endif
 
+       
     // gettext initialization
     setlocale (LC_ALL, "");
     #undef LOCALEDIR
@@ -479,6 +478,10 @@ int main(int argc, char **argv)
     }
 
     const char * fname = argv[1];
+    const char * bmkdir = NULL;
+    lString8 fn8( fname );
+    if ( fn8.startsWith( lString8("/media/sd/") ) )
+        bmkdir = "/media/sd/bookmarks/";
     //TODO: remove hardcoded
 #ifdef __i386__
         CRXCBWindowManager winman( 600, 700 );
@@ -501,6 +504,7 @@ int main(int argc, char **argv)
         if ( !winman.loadSkin(  homecrengine + L"skin" ) )
             if ( !winman.loadSkin(  lString16( L"/media/sd/crengine/skin" ) ) )
             	winman.loadSkin( lString16( L"/usr/share/crengine/skin" ) );
+        HyphMan::initDictionaries( lString16("/usr/share/crengine/hyph") );
         //LVExtractPath(LocalToUnicode(lString8(fname)))
         V3DocViewWin * main_win = new V3DocViewWin( &winman, lString16(CRSKIN) );
         main_win->getDocView()->setBackgroundColor(0xFFFFFF);
@@ -513,6 +517,8 @@ int main(int argc, char **argv)
 
         if ( !main_win->loadDictConfig(  lString16( L"/media/sd/crengine/dict/dictd.conf" ) ) )
             main_win->loadDictConfig( lString16( L"/usr/share/crengine/dict/dictd.conf" ) );
+        if ( bmkdir!=NULL )
+            main_win->setBookmarkDir( lString16(bmkdir) );
 
     #define SEPARATE_INI_FILES
 

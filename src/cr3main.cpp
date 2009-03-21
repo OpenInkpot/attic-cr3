@@ -148,7 +148,7 @@ lString8 readFileToString( const char * fname )
 
 void ShutdownCREngine()
 {
-    HyphMan::Close();
+    HyphMan::uninit();
     ShutdownFontManager();
     CRLog::setLogger( NULL );
 #if LDOM_USE_OWN_MEM_MAN == 1
@@ -317,13 +317,13 @@ bool InitCREngine( const char * exename, lString16Collection & fontDirs )
     }
 
     // init hyphenation manager
-    char hyphfn[1024];
-    sprintf(hyphfn, "Russian_EnUS_hyphen_(Alan).pdb" );
-    if ( !initHyph( (UnicodeToLocal(appPath) + hyphfn).c_str() ) ) {
+    //char hyphfn[1024];
+    //sprintf(hyphfn, "Russian_EnUS_hyphen_(Alan).pdb" );
+    //if ( !initHyph( (UnicodeToLocal(appPath) + hyphfn).c_str() ) ) {
 #ifdef _LINUX
-        initHyph( "/usr/share/crengine/hyph/Russian_EnUS_hyphen_(Alan).pdb" );
+    //    initHyph( "/usr/share/crengine/hyph/Russian_EnUS_hyphen_(Alan).pdb" );
 #endif
-    }
+    //}
 
     if (!fontMan->GetFontCount())
     {

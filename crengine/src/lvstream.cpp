@@ -734,6 +734,9 @@ public:
                 }
             }
             closedir(d);
+        } else {
+            delete dir;
+            return NULL;
         }
 
 
@@ -1644,7 +1647,7 @@ public:
             }
 
             if (ReadSize==0 || ZipHeader.Mark==0x06054b50 ||
-                    truncated && ZipHeader.Mark==0x02014b50)
+                    (truncated && ZipHeader.Mark==0x02014b50) )
             {
                 if (!truncated && *(lUInt16 *)((char *)&ZipHeader+20)!=0)
                     arcComment=true;
@@ -2704,7 +2707,7 @@ lvsize_t LVPumpStream( LVStreamRef out, LVStreamRef in )
 }
 
 
-LVContainerRef LVOpenDirectory( const wchar_t * path )
+LVContainerRef LVOpenDirectory( const wchar_t * path, const wchar_t * mask )
 {
     LVContainerRef dir( LVDirectoryContainer::OpenDirectory( path ) );
     return dir;
@@ -3198,13 +3201,15 @@ void LVRemovePathDelimiter( lString16 & pathName )
 bool LVCreateDirectory( lString16 path )
 {
     CRLog::trace("LVCreateDirectory(%s)", UnicodeToUtf8(path).c_str() );
-    LVRemovePathDelimiter(path);
-    if ( path.empty() )
+    //LVRemovePathDelimiter(path);
+    if ( path.length() <= 1 )
         return false;
     LVContainerRef dir = LVOpenDirectory( path.c_str() );
     if ( dir.isNull() ) {
+        CRLog::trace("Directory %s not found", UnicodeToUtf8(path).c_str());
+        LVRemovePathDelimiter(path);
         lString16 basedir = LVExtractPath( path );
-        CRLog::trace("Directory not found, checking base directory %s", UnicodeToUtf8(basedir).c_str());
+        CRLog::trace("Checking base directory %s", UnicodeToUtf8(basedir).c_str());
         if ( !LVCreateDirectory( basedir ) ) {
             CRLog::error("Failed to create directory %s", UnicodeToUtf8(basedir).c_str());
             return false;
@@ -3212,14 +3217,17 @@ bool LVCreateDirectory( lString16 path )
 #ifdef _WIN32
         return CreateDirectoryW( path.c_str(), NULL )!=0;
 #else
-        LVRemovePathDelimiter( path );
+        //LVRemovePathDelimiter( path );
         lString8 path8 = UnicodeToUtf8( path );
-        if ( mkdir(path8.c_str(), S_IRWXU | S_IRWXG | S_IROTH | S_IXOTH) )
+        CRLog::trace("Creating directory %s", path8.c_str() );
+        if ( mkdir(path8.c_str(), S_IRWXU | S_IRWXG | S_IROTH | S_IXOTH) ) {
+            CRLog::error("Cannot create directory %s", path8.c_str() );
             return false;
+        }
         return true;
 #endif
     }
-    CRLog::error("Directory %s exists", path.c_str());
+    CRLog::trace("Directory %s exists", UnicodeToUtf8(path).c_str());
     return true;
 }
 
