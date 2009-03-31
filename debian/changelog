@@ -1,3 +1,12 @@
+cr3 (3.0.19-1) asimov; urgency=low
+
+  * Customisable main menu
+  * Added current key mapping browse window
+  * Fix HTML support for lists
+  * Add current page and battery state to About dialog
+
+ -- Vadim Lopatin <vadim.lopatin@coolreader.org>  Tue, 31 Mar 2009 08:15:00 +0400
+
 cr3 (3.0.17-12) asimov; urgency=low
 
   * Fixed dependencies
