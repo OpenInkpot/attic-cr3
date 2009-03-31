@@ -1,3 +1,9 @@
+cr3 (3.0.19-2) asimov; urgency=low
+
+  * OI build
+
+ -- Alexander Kerner <lunohod@openinkpot.org>  Tue, 31 Mar 2009 09:52:41 +0200
+
 cr3 (3.0.19-1) asimov; urgency=low
 
   * Customisable main menu
