@@ -1,5 +1,6 @@
 cr3 (3.0.19-3) asimov; urgency=low
 
+  [ Vadim Lopatin ]
   * Add key definitions for N516
   * Add input clear action for virtual keyboard / T9
   * Add time and chapter name to About dialog
@@ -7,7 +8,7 @@ cr3 (3.0.19-3) asimov; urgency=low
   * Allow customising page heading font via .ini file
   * Fix paragraph styles
 
- -- Vadim Lopatin <vadim.lopatin@coolreader.org>  Fri, 3 Apr 2009 07:25:00 +0400
+ -- Alexander Kerner <lunohod@openinkpot.org>  Fri, 03 Apr 2009 10:51:14 +0200
 
 cr3 (3.0.19-2) asimov; urgency=low
 
