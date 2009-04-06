@@ -95,8 +95,9 @@ msgid "Current page"
 msgstr ""
 
 #: src/mainwnd.cpp:669
+#, fuzzy
 msgid "Total pages"
-msgstr ""
+msgstr "Перейти на сторінку"
 
 #: src/mainwnd.cpp:670
 msgid "Battery state"
@@ -112,7 +113,7 @@ msgstr ""
 
 #: src/mainwnd.cpp:679
 msgid "Status"
-msgstr ""
+msgstr "Статусний рядок"
 
 #: src/mainwnd.cpp:682
 msgid "Archive name"
@@ -430,7 +431,7 @@ msgstr ""
 
 #: src/viewdlg.cpp:316
 msgid "To first page"
-msgstr ""
+msgstr "Перейти на сторінку"
 
 #: src/viewdlg.cpp:318
 msgid "Back by page"
@@ -458,11 +459,11 @@ msgstr ""
 
 #: src/viewdlg.cpp:325 src/viewdlg.cpp:345
 msgid "Go to link"
-msgstr ""
+msgstr "Перейти на сторінку"
 
 #: src/viewdlg.cpp:326
 msgid "To last page"
-msgstr ""
+msgstr "Перейти на сторінку"
 
 #: src/viewdlg.cpp:327
 msgid "Go to position"
@@ -470,7 +471,7 @@ msgstr ""
 
 #: src/viewdlg.cpp:329
 msgid "Zoom in"
-msgstr ""
+msgstr "Додаткова інформація"
 
 #: src/viewdlg.cpp:330
 msgid "Zoom out"
@@ -478,7 +479,7 @@ msgstr ""
 
 #: src/viewdlg.cpp:331
 msgid "Toggle text format"
-msgstr ""
+msgstr "Формат файлу"
 
 #: src/viewdlg.cpp:332
 msgid "Save bookmark by number"
@@ -522,7 +523,7 @@ msgstr "Налаштування"
 
 #: src/viewdlg.cpp:343
 msgid "Font size settings"
-msgstr ""
+msgstr "Кернінг шрифту"
 
 #: src/viewdlg.cpp:344
 msgid "Page orientation settings"
