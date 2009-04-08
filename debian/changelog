@@ -1,3 +1,10 @@
+cr3 (3.0.19-5) asimov; urgency=low
+
+  [ Vadim Lopatin ]
+  * Optimize skin images access
+
+ -- Alexander Kerner <lunohod@openinkpot.org>  Wed, 08 Apr 2009 14:15:14 +0200
+
 cr3 (3.0.19-4) asimov; urgency=low
 
   [ Vadim Lopatin ]
