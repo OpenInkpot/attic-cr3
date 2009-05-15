@@ -1,3 +1,9 @@
+cr3 (3.0.19-5+b1) asimov; urgency=low
+
+  * rebuld because of soname change in xcb-util
+
+ -- Alexander Kerner <lunohod@openinkpot.org>  Fri, 15 May 2009 23:41:03 +0200
+
 cr3 (3.0.19-5) asimov; urgency=low
 
   [ Vadim Lopatin ]
