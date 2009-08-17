@@ -1,3 +1,11 @@
+cr3 (3.0.20-1) asimov; urgency=low
+
+  * Merge from latest sourceforge CVS
+  * Memory mapped files support for document DOM tree
+  * Caching of recent opened books
+
+ -- Vadim Lopatin <vadim.lopatin@coolreader.org>  Mon, 17 Aug 2009 11:15:00 +0400
+
 cr3 (3.0.19-5+b1) asimov; urgency=low
 
   * rebuld because of soname change in xcb-util

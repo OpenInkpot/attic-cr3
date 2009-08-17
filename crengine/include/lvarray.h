@@ -37,8 +37,11 @@ public:
     {
         _size = _count = len;
         _array = new T[ _size ];
-        for (int i=0; i<_count; i++)
-            _array[i] = value;
+        if ( sizeof(value)<=2 && value==0 )
+            memset( _array, 0, sizeof(T)*_count );
+        else
+            for (int i=0; i<_count; i++)
+                _array[i] = value;
     }
     LVArray( const LVArray & v )
     {
@@ -155,10 +158,16 @@ public:
         }
         _count -= count;
     }
+    T remove( int pos )
+    {
+        T item = _array[ pos ];
+        erase( pos, 1 );
+        return item;
+    }
 
     /// adds new item to end of vector
     void add( T item )
-    { 
+    {
         insert( -1, item );
     }
 
@@ -170,7 +179,7 @@ public:
             _array[ _count+i ] = items[i];
         _count += count;
     }
-    
+
     /// adds new item to end of vector
     void add( const LVArray & list )
     {
@@ -179,7 +188,7 @@ public:
             _array[ _count+i ] = list._array[i];
         _count += list._count;
     }
-    
+
     T * addSpace( int count )
     {
         reserve( _count + count );
@@ -187,7 +196,7 @@ public:
         _count += count;
         return ptr;
     }
-    
+
     /// inserts new item to specified position
     void insert( int pos, T item )
     {
@@ -217,7 +226,7 @@ public:
         : inpos(0)
     {
     }
-    
+
     /// returns pointer to reserved space of specified size
     T * prepareWrite( int size )
     {
@@ -232,7 +241,7 @@ public:
         }
         return m_buf.addSpace( size );
     }
-    
+
     /// writes data to end of queue
     void write( const T * data, int size )
     {
@@ -240,15 +249,15 @@ public:
         for (int i=0; i<size; i++)
             buf[i] = data[i];
     }
-    
+
     int length()
     {
         return m_buf.length() - inpos;
     }
-    
+
     /// returns pointer to data to be read
     T * peek() { return m_buf.ptr() + inpos; }
-    
+
     /// reads data from start of queue
     void read( T * data, int size )
     {
@@ -258,7 +267,7 @@ public:
             data[i] = m_buf[inpos + i];
         inpos += size;
     }
-    
+
     /// skips data from start of queue
     void skip( int size )
     {

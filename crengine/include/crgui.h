@@ -301,7 +301,7 @@ class CRGUIStringTranslator
 {
 public:
     /// translate string by key, return default value if not found
-    virtual lString16 translateString( const char * key, const char * defValue )
+    virtual lString16 translateString( const char *, const char * defValue )
     {
         return Utf8ToUnicode( lString8(defValue) );
     }
@@ -317,7 +317,7 @@ class CRGUIScreen
         /// creates compatible canvas of specified size
         virtual LVDrawBuf * createCanvas( int dx, int dy ) = 0;
         /// sets new screen size, returns true if size is changed
-        virtual bool setSize( int dx, int dy ) { return false; }
+        virtual bool setSize( int dx, int dy ) = 0;
         /// returns screen width
         virtual int getWidth() = 0;
         /// returns screen height
@@ -329,7 +329,7 @@ class CRGUIScreen
         /// draw image on screen canvas
         virtual void draw( LVDrawBuf * img, int x = 0, int y = 0) = 0;
         /// transfers contents of buffer to device, if full==true, redraws whole screen, otherwise only changed area
-        virtual void flush( bool full ) { }
+        virtual void flush( bool full ) = 0;
         /// invalidates rectangle: add it to bounding box of next partial update
         virtual void invalidateRect( const lvRect & rc ) { }
         virtual ~CRGUIScreen() { }
@@ -344,13 +344,13 @@ class CRGUIWindow
         /// returns skin name for window
         virtual lString16 getSkinName() = 0;
         /// set accelerator table for window
-        virtual void setAccelerators( CRGUIAcceleratorTableRef table ) { }
+        virtual void setAccelerators( CRGUIAcceleratorTableRef ) { }
         /// get window accelerator table
         virtual CRGUIAcceleratorTableRef getAccelerators() { return CRGUIAcceleratorTableRef(); }
         /// returns true if key is processed
-        virtual bool onKeyPressed( int key, int flags = 0 ) { return false; }
+        virtual bool onKeyPressed( int key, int flags = 0 ) = 0;
         /// returns true if command is processed
-        virtual bool onCommand( int command, int params = 0 ) { return false; }
+        virtual bool onCommand( int command, int params = 0 ) = 0;
         /// returns true if window is visible
         virtual bool isVisible() const = 0;
         /// returns true if window is fullscreen
@@ -394,6 +394,8 @@ class CRGUIWindowManager : public CRGUIStringTranslator
         CRGUIAcceleratorTableList _accTables;
 		CRKeyboardLayoutList _kbLayouts;
     public:
+        /// draws icon at center of screen
+        virtual void showWaitIcon( lString16 filename );
 		/// loads skin from file
 	    virtual bool loadSkin( lString16 pathname );
 		/// returns keyboard layouts
@@ -690,7 +692,7 @@ class CRGUIWindowBase : public CRGUIWindow
         virtual void setFullscreen( bool fullscreen ) { _fullscreen = fullscreen; }
         virtual CRGUIWindowManager * getWindowManager() { return _wm; }
         CRGUIWindowBase( CRGUIWindowManager * wm )
-        : _wm(wm), _visible(true), _fullscreen(true), _dirty(true), _passKeysToParent(true), _passCommandsToParent(true)
+        : _wm(wm), _visible(true), _fullscreen(true), _dirty(true), _passKeysToParent(false), _passCommandsToParent(false)
 
         {
             // fullscreen visible by default
@@ -936,6 +938,8 @@ class CRMenuItem
     public:
         /// id of item
         int getId() { return _id; }
+        /// set id of item
+        void setId( int id ) { _id = id; }
         /// item label
         lString16 getLabel() { return _label; }
         /// item icon
@@ -979,10 +983,10 @@ class CRMenu : public CRGUIWindowBase, public CRMenuItem {
         virtual void Draw( LVDrawBuf & buf, int x, int y );
     public:
         CRMenuSkinRef getSkin();
-        CRMenu( CRGUIWindowManager * wm, CRMenu * parentMenu, int id, lString16 label, LVImageSourceRef image, LVFontRef defFont, LVFontRef valueFont, CRPropRef props=CRPropRef(), const char * propName=NULL )
-        : CRGUIWindowBase( wm ), CRMenuItem( parentMenu, id, label, image, defFont ), _props(props), _propName(Utf8ToUnicode(lString8(propName))), _valueFont(valueFont), _topItem(0), _pageItems(8) { }
-        CRMenu( CRGUIWindowManager * wm, CRMenu * parentMenu, int id, const char * label, LVImageSourceRef image, LVFontRef defFont, LVFontRef valueFont, CRPropRef props=CRPropRef(), const char * propName=NULL )
-        : CRGUIWindowBase( wm ), CRMenuItem( parentMenu, id, label, image, defFont ), _props(props), _propName(Utf8ToUnicode(lString8(propName))), _valueFont(valueFont), _topItem(0), _pageItems(8) { }
+        CRMenu( CRGUIWindowManager * wm, CRMenu * parentMenu, int id, lString16 label, LVImageSourceRef image, LVFontRef defFont, LVFontRef valueFont, CRPropRef props=CRPropRef(), const char * propName=NULL, int pageItems=8 )
+        : CRGUIWindowBase( wm ), CRMenuItem( parentMenu, id, label, image, defFont ), _props(props), _propName(Utf8ToUnicode(lString8(propName))), _valueFont(valueFont), _topItem(0), _pageItems(pageItems) { }
+        CRMenu( CRGUIWindowManager * wm, CRMenu * parentMenu, int id, const char * label, LVImageSourceRef image, LVFontRef defFont, LVFontRef valueFont, CRPropRef props=CRPropRef(), const char * propName=NULL, int pageItems=8 )
+        : CRGUIWindowBase( wm ), CRMenuItem( parentMenu, id, label, image, defFont ), _props(props), _propName(Utf8ToUnicode(lString8(propName))), _valueFont(valueFont), _topItem(0), _pageItems(pageItems) { }
         virtual bool isSubmenu() { return true; }
         LVPtrVector<CRMenuItem> & getItems() { return _items; }
         CRPropRef getProps() { return _props; }

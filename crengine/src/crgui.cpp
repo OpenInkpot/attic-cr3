@@ -146,10 +146,30 @@ void CRGUIAcceleratorTableList::addAll( const CRGUIAcceleratorTableList & v )
 	}
 }
 
+/// draws icon at center of screen
+void CRGUIWindowManager::showWaitIcon( lString16 filename )
+{
+    LVImageSourceRef img = _skin->getImage( filename );
+    if ( !img.isNull() ) {
+        int dx = img->GetWidth();
+        int dy = img->GetHeight();
+        int x = (_screen->getWidth() - dx) / 2;
+        int y = (_screen->getHeight() - dy) / 2;
+        CRLog::debug("Drawing wait image %s %dx%d", UnicodeToUtf8(filename).c_str(), dx, dy );
+        _screen->getCanvas()->Draw( img, x, y, dx, dy, true );
+        _screen->invalidateRect( lvRect(x, y, x+dx, y+dy) );
+        _screen->flush(false);
+    } else {
+        CRLog::error("CRGUIWindowManager::showWaitIcon(%s): image not found in current skin", UnicodeToUtf8(filename).c_str() );
+    }
+}
+
 void CRGUIScreenBase::flush( bool full )
 {
-    if ( _updateRect.isEmpty() && !full )
+    if ( _updateRect.isEmpty() && !full ) {
+        CRLog::trace("CRGUIScreenBase::flush() - update rectangle is empty");
         return;
+    }
     if ( !_front.isNull() && !_updateRect.isEmpty() && !full ) {
         // calculate really changed area
         lvRect rc;
@@ -409,7 +429,12 @@ lvPoint CRMenu::getSize()
     }
     if ( w>600 )
         w = 600;
-    return skin->getWindowSize( lvPoint( w, h ) );
+    lvPoint res = skin->getWindowSize( lvPoint( w, h ) );
+    if ( res.x > _wm->getScreen()->getWidth() )
+        res.x = _wm->getScreen()->getWidth();
+    if ( res.y > _wm->getScreen()->getHeight() )
+        res.y = _wm->getScreen()->getHeight();
+    return res;
 }
 
 lString16 CRMenu::getSubmenuValue()
@@ -629,6 +654,10 @@ bool CRMenu::onCommand( int command, int params )
         setCurPage( getCurPage()+10 );
         return true;
     }
+    if ( command==MCMD_SCROLL_BACK_LONG ) {
+        setCurPage( getCurPage()-10 );
+        return true;
+    }
     if ( command==MCMD_SCROLL_FORWARD ) {
 		if ( params==0 )
 			params = 1;
@@ -646,12 +675,18 @@ bool CRMenu::onCommand( int command, int params )
         return true;
     }
     int option = -1;
-    if ( command>=MCMD_SELECT_1 && command<=MCMD_SELECT_9 )
-        option = command - MCMD_SELECT_1;
+    int longPress = 0;
+    if ( command>=MCMD_SELECT_0 && command<=MCMD_SELECT_9 )
+        option = (command==MCMD_SELECT_0) ? 9 : command - MCMD_SELECT_1;
+    if ( command>=MCMD_SELECT_0_LONG && command<=MCMD_SELECT_9_LONG ) {
+        option = (command==MCMD_SELECT_0_LONG) ? 9 : command - MCMD_SELECT_1_LONG;
+        longPress = 1;
+    }
     if ( option < 0 ) {
         CRLog::error( "CRMenu::onCommand() - unsupported command %d, %d", command, params );
         return true;
     }
+  
     option += getTopItem();
     if ( option >= getItems().length() )
         return true;
@@ -687,7 +722,7 @@ bool CRMenu::onCommand( int command, int params )
         if ( _menu != NULL )
             closeMenu( 0 );
         else
-            closeMenu( command ); // close, for root menu
+            closeMenu( command, longPress ); // close, for root menu
         return true;
     }
     return false;
@@ -724,7 +759,7 @@ static bool readNextLine( const LVStreamRef & stream, lString16 & dst )
                 flgComment = false;
                 line.clear();
             } else {
-				if ( line[0]==0xEf && line[1]==0xBB && line[2] ==0xBF )
+                                if ( line[0]==(lChar8)0xEf && line[1]==(lChar8)0xBB && line[2]==(lChar8)0xBF )
 					line.erase( 0, 3 );
                 if ( !line.empty() ) {
                     dst = Utf8ToUnicode( line );

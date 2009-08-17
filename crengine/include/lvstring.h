@@ -15,6 +15,7 @@
 
 #include <stdlib.h>
 #include <stdarg.h>
+#include <string.h>
 #include "lvtypes.h"
 #include "lvmemman.h"
 
@@ -63,7 +64,8 @@ int    lStr_cmp(const lChar8 * str1, const lChar8 * str2);
 void lStr_uppercase( lChar16 * str, int len );
 /// convert string to lowercase
 void lStr_lowercase( lChar16 * str, int len );
-
+/// calculates CRC32 for buffer contents
+lUInt32 lStr_crc32( lUInt32 prevValue, const void * buf, int size );
 
 #define CH_PROP_UPPER       0x0001 ///< uppercase alpha character flag
 #define CH_PROP_LOWER       0x0002 ///< lowercase alpha character flag
@@ -247,9 +249,9 @@ public:
     lUInt32 getHash() const;
 
     /// get character at specified position with range check
-    value_type & at( size_type pos ) { if (pos<0||pos>pchunk->len) crFatalError(); return modify()[pos]; }
+    value_type & at( size_type pos ) { if (pos>pchunk->len) crFatalError(); return modify()[pos]; }
     /// get character at specified position without range check
-    const value_type operator [] ( size_type pos ) const { return pchunk->buf8[pos]; }
+    value_type operator [] ( size_type pos ) const { return pchunk->buf8[pos]; }
     /// get reference to character at specified position
     value_type & operator [] ( size_type pos ) { return modify()[pos]; }
 
@@ -342,6 +344,8 @@ public:
     lString16(const value_type * str);
     /// constructor from utf8 c-string
     explicit lString16(const lChar8 * str);
+    /// constructor from utf8 character array fragment
+    explicit lString16(const lChar8 * str, size_type count);
     /// constructor from wide character array fragment
     explicit lString16(const value_type * str, size_type count);
     /// constructor from another string substring
@@ -431,9 +435,9 @@ public:
     /// calculates hash for string
     lUInt32 getHash() const;
     /// returns character at specified position, with index bounds checking, fatal error if fails
-    value_type & at( size_type pos ) { if (pos<0||pos>pchunk->len) crFatalError(); return modify()[pos]; }
+    value_type & at( size_type pos ) { if (pos>pchunk->len) crFatalError(); return modify()[pos]; }
     /// returns character at specified position, without index bounds checking
-    const value_type operator [] ( size_type pos ) const { return pchunk->buf16[pos]; }
+    value_type operator [] ( size_type pos ) const { return pchunk->buf16[pos]; }
     /// returns reference to specified character position (lvalue)
     value_type & operator [] ( size_type pos ) { return modify()[pos]; }
     /// resizes string, copies if several references exist
@@ -597,6 +601,8 @@ public:
 /// calculates hash for wide c-string
 lUInt32 calcStringHash( const lChar16 * s );
 
+class SerialBuf;
+
 /// hashed wide string collection
 class lString16HashedCollection : public lString16Collection
 {
@@ -612,6 +618,12 @@ private:
     void clearHash();
     void reHash( int newSize );
 public:
+
+	/// serialize to byte array (pointer will be incremented by number of bytes written)
+	void serialize( SerialBuf & buf );
+	/// deserialize from byte array (pointer will be incremented by number of bytes read)
+	bool deserialize( SerialBuf & buf );
+
     lString16HashedCollection( lString16HashedCollection & v );
     lString16HashedCollection( lUInt32 hashSize );
     ~lString16HashedCollection();
@@ -735,8 +747,96 @@ lString16 ByteToUnicode( const lString8 & str, const lChar16 * table );
 lString16 LocalToUnicode( const lString8 & str );
 /// converts utf-8 string to wide unicode string
 lString16 Utf8ToUnicode( const lString8 & str );
-/// converts utf-8 string to wide unicode string
+/// converts utf-8 c-string to wide unicode string
 lString16 Utf8ToUnicode( const char * s );
+/// converts utf-8 string fragment to wide unicode string
+lString16 Utf8ToUnicode( const char * s, int sz );
+
+
+/// serialization/deserialization buffer
+class SerialBuf
+{
+	lUInt8 * _buf;
+	bool _ownbuf;
+	bool _error;
+    bool _autoresize;
+	int _size;
+	int _pos;
+public:
+    /// constructor of serialization buffer
+	SerialBuf( int sz, bool autoresize = true );
+	SerialBuf( const lUInt8 * p, int sz );
+	~SerialBuf();
+
+    bool copyTo( lUInt8 * buf, int maxSize );
+    inline lUInt8 * buf() { return _buf; }
+    inline void setPos( int pos ) { _pos = pos; }
+	inline int space() const { return _size-_pos; }
+	inline int pos() const { return _pos; }
+	inline int size() const { return _size; }
+
+    /// returns true if error occured during one of operations
+	inline bool error() const { return _error; }
+
+    inline void seterror() { _error = true; }
+    /// move pointer to beginning, clear error flag
+    inline void reset() { _error = false; _pos = 0; }
+
+    /// checks whether specified number of bytes is available, returns true in case of error
+	bool check( int reserved );
+
+	// write methods
+    /// put magic signature
+	void putMagic( const char * s );
+
+    /// add CRC32 for last N bytes
+    void putCRC( int N );
+
+    /// add contents of another buffer
+    SerialBuf & operator << ( const SerialBuf & v );
+
+	SerialBuf & operator << ( lUInt8 n );
+
+    SerialBuf & operator << ( char n );
+
+    SerialBuf & operator << ( bool n );
+
+    SerialBuf & operator << ( lUInt16 n );
+
+    SerialBuf & operator << ( lInt16 n );
+
+    SerialBuf & operator << ( lUInt32 n );
+
+    SerialBuf & operator << ( lInt32 n );
+
+    SerialBuf & operator << ( const lString16 & s );
+
+    SerialBuf & operator << ( const lString8 & s8 );
+
+	// read methods
+	SerialBuf & operator >> ( lUInt8 & n );
+
+	SerialBuf & operator >> ( char & n );
+
+	SerialBuf & operator >> ( bool & n );
+
+	SerialBuf & operator >> ( lUInt16 & n );
+
+	SerialBuf & operator >> ( lInt16 & n );
+
+	SerialBuf & operator >> ( lUInt32 & n );
+
+    SerialBuf & operator >> ( lInt32 & n );
+
+	SerialBuf & operator >> ( lString8 & s8 );
+
+	SerialBuf & operator >> ( lString16 & s );
+
+	bool checkMagic( const char * s );
+    /// read crc32 code, comapare with CRC32 for last N bytes
+    bool checkCRC( int N );
+};
+
 
 /// Logger
 class CRLog

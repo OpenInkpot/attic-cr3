@@ -13,6 +13,8 @@
 #ifndef CRSETUP_H_INCLUDED
 #define CRSETUP_H_INCLUDED
 
+
+
 // features set for LBOOK
 #if (LBOOK==1)
 #ifndef LDOM_USE_OWN_MEM_MAN
@@ -44,11 +46,6 @@
 #define ZIP_STREAM_BUFFER_SIZE               0x80000
 #define FILE_STREAM_BUFFER_SIZE              0x40000
 #endif
-#define COMPACT_DOM                          1
-#define COMPACT_DOM_MIN_REF_TEXT_LENGTH      32
-#define COMPACT_DOM_SIZE_THRESHOLD           0x500000
-#define COMPACT_DOM_MAX_TEXT_FRAGMENT_COUNT  64
-#define COMPACT_DOM_MAX_TEXT_BUFFER_SIZE     0x60000
 
 #elif defined(_LINUX) || defined (LINUX)
 
@@ -72,11 +69,6 @@
 #define GLYPH_CACHE_SIZE                     0x40000
 #define ZIP_STREAM_BUFFER_SIZE               0x40000
 #define FILE_STREAM_BUFFER_SIZE              0x20000
-#define COMPACT_DOM                          1
-#define COMPACT_DOM_MIN_REF_TEXT_LENGTH      24
-#define COMPACT_DOM_MAX_TEXT_FRAGMENT_COUNT  64
-#define COMPACT_DOM_MAX_TEXT_BUFFER_SIZE     0x20000
-#define COMPACT_DOM_SIZE_THRESHOLD           0x300000
 #endif
 
 //==================================================
@@ -100,11 +92,6 @@
 #define GLYPH_CACHE_SIZE                     0x20000
 #define ZIP_STREAM_BUFFER_SIZE               0x80000
 #define FILE_STREAM_BUFFER_SIZE              0x40000
-#define COMPACT_DOM                          1
-#define COMPACT_DOM_MIN_REF_TEXT_LENGTH      32
-#define COMPACT_DOM_SIZE_THRESHOLD           0x500000
-#define COMPACT_DOM_MAX_TEXT_FRAGMENT_COUNT  64
-#define COMPACT_DOM_MAX_TEXT_BUFFER_SIZE     0x60000
 //#define USE_LIBJPEG 0
 #endif
 
@@ -186,16 +173,6 @@
 #define FILE_STREAM_BUFFER_SIZE 0x40000
 #endif
 
-#ifndef COMPACT_DOM
-/// set to 1 to use cached readonly text read-on-fly from stream, 0 to store whole text in memory
-#define COMPACT_DOM 0
-/// set to minimal text length to use file references instead of text copy
-#define COMPACT_DOM_MIN_REF_TEXT_LENGTH 12
-/// max text fragment count for text cache
-#define COMPACT_DOM_MAX_TEXT_FRAGMENT_COUNT 32
-/// max buffer size for text cache
-#define COMPACT_DOM_MAX_TEXT_BUFFER_SIZE    16384
-#endif
 
 
 #if !defined(USE_WIN32_FONTS) && (USE_FREETYPE!=1)
@@ -259,5 +236,20 @@
 #ifndef MAX_SKIN_IMAGE_CACHE_ITEM_RAM_COPY_PACKED_SIZE
 #define MAX_SKIN_IMAGE_CACHE_ITEM_RAM_COPY_PACKED_SIZE 10000
 #endif
+
+
+// Caching and MMAP options
+
+/// minimal document size to enable caching for
+#ifndef DOCUMENT_CACHING_SIZE_THRESHOLD
+#define DOCUMENT_CACHING_SIZE_THRESHOLD 0x8000 // 32K
+#endif
+
+/// max ram data block usage, after which swapping to disk should occur
+#ifndef DOCUMENT_CACHING_MAX_RAM_USAGE
+#define DOCUMENT_CACHING_MAX_RAM_USAGE 0x400000 // 3Mb
+#endif
+
+
 
 #endif//CRSETUP_H_INCLUDED

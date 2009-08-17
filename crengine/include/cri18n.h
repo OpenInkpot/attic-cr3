@@ -13,7 +13,7 @@
 #ifndef __CRI18N_H_INCLUDED__
 #define __CRI18N_H_INCLUDED__
 
-#if CR_EMULATE_GETTEXT!=1
+#if CR_EMULATE_GETTEXT!=1 && !defined(_WIN32)
 #include <libintl.h>
 #endif
 
@@ -47,8 +47,8 @@ public:
 		}
 	protected:
 		// no copy
-		Item( const Item & v ) { }
-		Item & operator = ( const Item & v ) { return *this; }
+                Item( const Item & ) { }
+                Item & operator = ( const Item & ) { return *this; }
 	};
 protected:
 	LVPtrVector<Item> _list;

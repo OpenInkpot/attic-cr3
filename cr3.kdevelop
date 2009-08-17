@@ -10,8 +10,8 @@
     <projectname>cr3</projectname>
     <projectdirectory>.</projectdirectory>
     <absoluteprojectpath>false</absoluteprojectpath>
-    <description></description>
-    <defaultencoding></defaultencoding>
+    <description/>
+    <defaultencoding/>
   </general>
   <kdevautoproject>
     <general>
@@ -27,7 +27,7 @@
         <cxxflags>-O2 -g0</cxxflags>
       </optimized>
       <debug>
-        <configargs>--enable-debug=full --prefix=/usr --sysconfdir=/etc</configargs>
+        <configargs>--enable-debug=full --prefix=/usr</configargs>
         <builddir>debug</builddir>
         <ccompiler>kdevgccoptions</ccompiler>
         <cxxcompiler>kdevgppoptions</cxxcompiler>
@@ -58,8 +58,8 @@
     </make>
     <run>
       <mainprogram>/home/lve/src/cr3ewl/debug/src/cr3</mainprogram>
-      <programargs>/home/lve/src/test/example.fb2</programargs>
-      <globaldebugarguments>/home/lve/src/test/example.fb2</globaldebugarguments>
+      <programargs>/home/lve/src/cr3ewl/test/automake.htm</programargs>
+      <globaldebugarguments>/home/lve/src/cr3ewl/test/automake.htm</globaldebugarguments>
       <globalcwd>/home/lve/src/cr3ewl/debug</globalcwd>
       <useglobalprogram>true</useglobalprogram>
       <terminal>false</terminal>
@@ -76,16 +76,16 @@
   </kdevautoproject>
   <kdevdebugger>
     <general>
-      <dbgshell></dbgshell>
-      <gdbpath></gdbpath>
-      <configGdbScript></configGdbScript>
-      <runShellScript></runShellScript>
-      <runGdbScript></runGdbScript>
+      <dbgshell/>
+      <gdbpath/>
+      <configGdbScript/>
+      <runShellScript/>
+      <runGdbScript/>
       <breakonloadinglibs>true</breakonloadinglibs>
       <separatetty>false</separatetty>
       <floatingtoolbar>false</floatingtoolbar>
       <raiseGDBOnStart>false</raiseGDBOnStart>
-      <programargs>/home/lve/src/test/example.fb2</programargs>
+      <programargs>/home/lve/src/cr3ewl/test/automake.htm</programargs>
     </general>
     <display>
       <staticmembers>false</staticmembers>
@@ -186,7 +186,7 @@
       <includeTypedefs>false</includeTypedefs>
     </codecompletion>
     <creategettersetter>
-      <prefixGet></prefixGet>
+      <prefixGet/>
       <prefixSet>set</prefixSet>
       <prefixVariable>m_,_</prefixVariable>
       <parameterName>theValue</parameterName>

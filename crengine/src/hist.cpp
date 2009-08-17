@@ -59,7 +59,7 @@ public:
     {
     }
     /// called on opening tag
-    virtual ldomElement * OnTagOpen( const lChar16 * nsname, const lChar16 * tagname)
+    virtual ldomNode * OnTagOpen( const lChar16 * nsname, const lChar16 * tagname)
     {
         if ( lStr_cmp(tagname, L"FictionBookMarks")==0 && state==in_xml ) {
             state = in_fbm;
@@ -183,8 +183,7 @@ public:
         }
     }
     /// called on text
-    virtual void OnText( const lChar16 * text, int len, 
-        lvpos_t fpos, lvsize_t fsize, lUInt32 flags )
+    virtual void OnText( const lChar16 * text, int len, lUInt32 flags )
     {
         lString16 txt( text, len );
         switch (state) {
@@ -265,7 +264,7 @@ static void putBookmark( LVStream * stream, CRBookmark * bmk )
     char percent[32];
     sprintf( percent, "%d.%02d%%", bmk->getPercent()/100, bmk->getPercent()%100 );
     char bmktag[255];
-    sprintf(bmktag, "bookmark type=\"%s\" percent=\"%s\" timestamp=\"%d\" shortcut=\"%d\"", tname, percent, (int)bmk->getTimestamp(), bmk->getShortcut() ); 
+    sprintf(bmktag, "bookmark type=\"%s\" percent=\"%s\" timestamp=\"%d\" shortcut=\"%d\"", tname, percent, (int)bmk->getTimestamp(), bmk->getShortcut() );
     putTag(stream, 3, bmktag);
     putTagValue( stream, 4, "start-point", bmk->getStartPos() );
     putTagValue( stream, 4, "end-point", bmk->getEndPos() );
@@ -380,9 +379,11 @@ void CRFileHistRecord::setLastPos( CRBookmark * bmk )
 
 lString16 CRBookmark::getChapterName( ldomXPointer ptr )
 {
+    //CRLog::trace("CRBookmark::getChapterName()");
 	lString16 chapter;
 	int lastLevel = -1;
 	bool foundAnySection = false;
+    lUInt16 section_id = ptr.getNode()->getDocument()->getElementNameIndex( L"section" );
 	if ( !ptr.isNull() )
 	{
 		ldomXPointerEx p( ptr );
@@ -390,11 +391,12 @@ lString16 CRBookmark::getChapterName( ldomXPointer ptr )
 		while ( !p.isNull() ) {
 			if ( !p.prevElement() )
 				break;
+            bool foundSection = p.findElementInPath( section_id ) > 0;
+            //(p.toString().pos(lString16(L"section")) >=0 );
+            foundAnySection = foundAnySection || foundSection;
+            if ( !foundSection && foundAnySection )
+                continue;
 			lString16 nname = p.getNode()->getNodeName();
-			bool foundSection = (p.toString().pos(lString16(L"section")) >=0 );
-			if ( !foundSection && foundAnySection )
-				continue;
-			foundAnySection = foundAnySection || foundSection;
 			if ( !nname.compare(L"title") || !nname.compare(L"h1") || !nname.compare("h2")  || !nname.compare("h3") ) {
 				if ( lastLevel!=-1 && p.getLevel()>=lastLevel )
 					continue;
@@ -410,17 +412,20 @@ lString16 CRBookmark::getChapterName( ldomXPointer ptr )
 	return chapter;
 }
 
-CRFileHistRecord * CRFileHist::savePosition( lString16 fpathname, size_t sz, 
+CRFileHistRecord * CRFileHist::savePosition( lString16 fpathname, size_t sz,
                             const lString16 & title,
                             const lString16 & author,
                             const lString16 & series,
                             ldomXPointer ptr )
 {
+    CRLog::trace("CRFileHist::savePosition");
     lString16 name;
 	lString16 path;
     splitFName( fpathname, path, name );
     CRBookmark bmk( ptr );
+    CRLog::trace("Bookmark created");
     int index = findEntry( name, path, sz );
+    CRLog::trace("findEntry exited");
     if ( index>=0 ) {
         makeTop( index );
         _records[0]->setLastPos( &bmk );
@@ -438,6 +443,7 @@ CRFileHistRecord * CRFileHist::savePosition( lString16 fpathname, size_t sz,
     rec->setLastTime( (time_t)time(0) );
 
     _records.insert( 0, rec );
+    CRLog::trace("CRFileHist::savePosition - exit");
     return rec;
 }
 
@@ -461,9 +467,12 @@ CRBookmark::CRBookmark (ldomXPointer ptr )
     if ( ptr.isNull() )
         return;
 
+    CRLog::trace("CRBookmark::CRBookmark() started");
     lString16 path;
 
+    CRLog::trace("CRBookmark::CRBookmark() calling ptr.toPoint");
     lvPoint pt = ptr.toPoint();
+    CRLog::trace("CRBookmark::CRBookmark() calculating percent");
     ldomDocument * doc = ptr.getNode()->getDocument();
     int h = doc->getFullHeight();
     if ( pt.y > 0 && h > 0 ) {
@@ -473,12 +482,15 @@ CRBookmark::CRBookmark (ldomXPointer ptr )
             _percent = 10000;
         }
     }
+    CRLog::trace("CRBookmark::CRBookmark() calling getChaptername");
 	setTitleText( CRBookmark::getChapterName( ptr ) );
     _startpos = ptr.toString();
     _timestamp = (time_t)time(0);
     lvPoint endpt = pt;
     endpt.y += 100;
+    CRLog::trace("CRBookmark::CRBookmark() creating xpointer for endp");
     ldomXPointer endptr = doc->createXPointer( endpt );
+    CRLog::trace("CRBookmark::CRBookmark() finished");
 }
 
 

@@ -1,12 +1,24 @@
 /** \file lvtinydom.h
-    \brief compact read-only XML DOM tree header
+    \brief fast and compact XML DOM tree
 
     CoolReader Engine
 
-    (c) Vadim Lopatin, 2000-2006
+    (c) Vadim Lopatin, 2000-2009
     This source code is distributed under the terms of
     GNU General Public License
     See LICENSE file for details
+
+
+	Goal: make fast DOM implementation with small memory footprint.
+
+    2009/04 : Introducing new storage model, optimized for mmap.
+    All DOM objects are divided by 2 parts.
+    1) Short RAM instance
+    2) Data storage part, which could be placed to mmap buffer.
+
+    Document object storage should handle object table and data buffer.
+    Each object has DataIndex, index of entry in object table.
+    Object table holds pointer to RAM instance and data storage for each object.
 */
 
 
@@ -27,10 +39,23 @@
 #include "lvimg.h"
 #include "props.h"
 
-#define LXML_DOCUMENT_NODE 1 ///< document node
-#define LXML_ELEMENT_NODE  2 ///< element node
-#define LXML_TEXT_NODE     3 ///< text node
-#define LXML_COMMENT_NODE  4 ///< comment node
+#define LXML_NO_DATA       0 ///< to mark data storage record as empty
+#define LXML_ELEMENT_NODE  1 ///< element node
+#define LXML_TEXT_NODE     2 ///< text node
+//#define LXML_DOCUMENT_NODE 3 ///< document node (not implemented)
+//#define LXML_COMMENT_NODE  4 ///< comment node (not implemented)
+
+
+/// docFlag mask, enable internal stylesheet of document and style attribute of elements
+#define DOC_FLAG_ENABLE_INTERNAL_STYLES 1
+/// docFlag mask, enable paperbook-like footnotes
+#define DOC_FLAG_ENABLE_FOOTNOTES       2
+/// docFlag mask, enable paperbook-like footnotes
+#define DOC_FLAG_PREFORMATTED_TEXT      4
+/// default docFlag set
+#define DOC_FLAG_DEFAULTS (DOC_FLAG_ENABLE_INTERNAL_STYLES|DOC_FLAG_ENABLE_FOOTNOTES)
+
+
 
 #define LXML_NS_NONE 0       ///< no namespace specified
 #define LXML_NS_ANY  0xFFFF  ///< any namespace can be specified
@@ -38,6 +63,7 @@
 
 #define DOC_STRING_HASH_SIZE  256
 #define RESERVED_DOC_SPACE    4096
+#define MAX_TYPE_ID           1024 // max of element, ns, attr
 #define MAX_ELEMENT_TYPE_ID   1024
 #define MAX_NAMESPACE_TYPE_ID 64
 #define MAX_ATTRIBUTE_TYPE_ID 1024
@@ -58,6 +84,15 @@
 #define DOC_PROP_FILE_PATH       "doc.file.path"
 #define DOC_PROP_FILE_SIZE       "doc.file.size"
 #define DOC_PROP_FILE_FORMAT     "doc.file.format"
+#define DOC_PROP_FILE_CRC32      "doc.file.crc32"
+#define DOC_PROP_CODE_BASE       "doc.file.code.base"
+
+#if BUILD_LITE!=1
+/// final block cache
+typedef LVRef<LFormattedText> LFormattedTextRef;
+typedef LVCacheMap< ldomNode *, LFormattedTextRef> CVRendBlockCache;
+#endif
+
 
 //#define LDOM_USE_OWN_MEM_MAN 0
 
@@ -70,7 +105,15 @@ typedef enum {
 } xpath_step_t;
 xpath_step_t ParseXPathStep( const lChar8 * &path, lString8 & name, int & index );
 
-class ldomElement;
+struct DataStorageItemHeader;
+struct TextDataStorageItem;
+struct ElementDataStorageItem;
+struct NodeItem;
+class DataBuffer;
+
+
+// default: 512K
+#define DEF_DOC_DATA_BUFFER_SIZE 0x80000
 
 /// Base class for XML DOM documents
 /**
@@ -78,17 +121,30 @@ class ldomElement;
     Maintains Name<->Id maps for element names, namespaces and attributes.
     It allows to use short IDs instead of strings in DOM internals,
     and avoid duplication of string values.
+
+	Manages data storage.
 */
 class lxmlDocBase
 {
+    friend class ldomNode;
+    friend class ldomElement;
+    friend class ldomPersistentElement;
+    friend class ldomText;
+    friend class ldomPersistentText;
+	friend class ldomXPointer;
 public:
 
     /// Default constructor
-    lxmlDocBase();
+    lxmlDocBase( int dataBufSize = DEF_DOC_DATA_BUFFER_SIZE );
     /// Copy constructor - copies ID tables contents
     lxmlDocBase( lxmlDocBase & doc );
     /// Destructor
-    virtual ~lxmlDocBase() { }
+    virtual ~lxmlDocBase();
+
+	/// serialize to byte array (pointer will be incremented by number of bytes written)
+	void serializeMaps( SerialBuf & buf );
+	/// deserialize from byte array (pointer will be incremented by number of bytes read)
+	bool deserializeMaps( SerialBuf & buf );
 
     //======================================================================
     // Name <-> Id maps functions
@@ -98,7 +154,7 @@ public:
         \param id is numeric value of namespace
         \return string value of namespace
     */
-    const lString16 & getNsName( lUInt16 id )
+    inline const lString16 & getNsName( lUInt16 id )
     {
         return _nsNameTable.nameById( id );
     }
@@ -115,7 +171,7 @@ public:
         \param id is numeric value of attribute
         \return string value of attribute
     */
-    const lString16 & getAttrName( lUInt16 id )
+    inline const lString16 & getAttrName( lUInt16 id )
     {
         return _attrNameTable.nameById( id );
     }
@@ -128,19 +184,19 @@ public:
     lUInt16 getAttrNameIndex( const lChar16 * name );
 
     /// helper: returns attribute value
-    const lString16 & getAttrValue( lUInt16 index ) const
+    inline const lString16 & getAttrValue( lUInt16 index ) const
     {
         return _attrValueTable[index];
     }
 
     /// helper: returns attribute value index
-    lUInt16 getAttrValueIndex( const lChar16 * value )
+    inline lUInt16 getAttrValueIndex( const lChar16 * value )
     {
         return (lUInt16)_attrValueTable.add( value );
     }
 
     /// helper: returns attribute value index, 0xffff if not found
-    lUInt16 findAttrValueIndex( const lChar16 * value )
+    inline lUInt16 findAttrValueIndex( const lChar16 * value )
     {
         return (lUInt16)_attrValueTable.find( value );
     }
@@ -150,7 +206,7 @@ public:
         \param id is numeric value of element name
         \return string value of element name
     */
-    const lString16 & getElementName( lUInt16 id )
+    inline const lString16 & getElementName( lUInt16 id )
     {
         return _elementNameTable.nameById( id );
     }
@@ -168,9 +224,9 @@ public:
         \return pointer to elem_def_t structure containing type properties
         \sa elem_def_t
     */
-    const elem_def_t * getElementTypePtr( lUInt16 id )
+    inline const css_elem_def_props_t * getElementTypePtr( lUInt16 id )
     {
-        return (const elem_def_t *) _elementNameTable.dataById( id );
+        return _elementNameTable.dataById( id );
     }
 
     // set node types from table
@@ -183,7 +239,7 @@ public:
     // debug dump
     void dumpUnknownEntities( const char * fname );
 
-    void cacheStyle(css_style_ref_t & styleref )
+    inline void cacheStyle(css_style_ref_t & styleref )
     {
         _styleCache.cacheIt( styleref );
     }
@@ -196,50 +252,197 @@ public:
 #endif
     }
 
-    LVStyleSheet * getStyleSheet() { return &_stylesheet; }
-
-    inline void onAttributeSet( lUInt16 attrId, lUInt16 valueId, ldomNode * node )
+    //inline LVStyleSheet * getStyleSheet() { return &_stylesheet; }
+    /// sets style sheet, clears old content of css if arg replace is true
+    void setStyleSheet( const char * css, bool replace );
+    /// apply document's stylesheet to element node
+    inline void applyStyle( ldomNode * element, css_style_rec_t * pstyle)
     {
-        if ( _idAttrId==0 )
-            _idAttrId = _attrNameTable.idByName("id");
-        if (attrId == _idAttrId)
-        {
-            _idNodeMap.set( valueId, node );
-        }
+        _stylesheet.apply( element, pstyle );
     }
+
+
+    void onAttributeSet( lUInt16 attrId, lUInt16 valueId, ldomNode * node );
 
     /// get element by id attribute value code
     inline ldomNode * getNodeById( lUInt16 attrValueId )
     {
-        return _idNodeMap.get( attrValueId );
+        return getNodeInstance( _idNodeMap.get( attrValueId ) );
     }
 
     /// get element by id attribute value
-    inline ldomElement * getElementById( const lChar16 * id )
+    inline ldomNode * getElementById( const lChar16 * id )
     {
         lUInt16 attrValueId = getAttrValueIndex( id );
         ldomNode * node = getNodeById( attrValueId );
-        if ( node )
-            return reinterpret_cast<ldomElement*>( node );
-        return NULL;
+        return node;
     }
     /// returns doc properties collection
-    CRPropRef getProps() { return _docProps; }
+    inline CRPropRef getProps() { return _docProps; }
     /// returns doc properties collection
     void setProps( CRPropRef props ) { _docProps = props; }
-private:
+
+    /// put all object into persistent storage
+    virtual void persist();
+
+    /// returns root element
+    ldomNode * getRootNode();
+
+    /// returns code base path relative to document container
+    inline lString16 getCodeBase() { return getProps()->getStringDef(DOC_PROP_CODE_BASE, ""); }
+    /// sets code base path relative to document container
+    inline void setCodeBase(lString16 codeBase) { getProps()->setStringDef(DOC_PROP_CODE_BASE, codeBase); }
+
+#ifdef _DEBUG
+    ///debug method, for DOM tree consistency check, returns false if failed
+    bool checkConsistency( bool requirePersistent );
+#endif
+
+    inline bool getDocFlag( lUInt32 mask )
+    {
+        return (_docFlags & mask) != 0;
+    }
+
+    inline void setDocFlag( lUInt32 mask, bool value )
+    {
+        if ( value )
+            _docFlags |= mask;
+        else
+            _docFlags &= ~mask;
+    }
+
+    inline lUInt32 getDocFlags()
+    {
+        return _docFlags;
+    }
+
+    inline void setDocFlags( lUInt32 value )
+    {
+        _docFlags = value;
+    }
+
+    /// try opening from cache file, find by source file name (w/o path) and crc32
+    virtual bool openFromCache( ) = 0;
+    /// swap to cache file, find by source file name (w/o path) and crc32
+    virtual bool swapToCache( lUInt32 reservedDataSize=0 ) = 0;
+    /// saves recent changes to mapped file
+    virtual bool updateMap() = 0;
+
+    /// returns or creates object instance by index
+    inline ldomNode * getNodeInstance( lInt32 dataIndex )
+    {
+        return _instanceMap[ dataIndex ].instance;
+/*
+        ldomNode * item = _instanceMap[ dataIndex ].instance;
+        if ( item != NULL )
+            return item;
+        // TODO: try to create instance from data
+        CRLog::error("NULL instance for index %d", dataIndex);
+        return NULL;
+*/
+    }
+protected:
+
+    
+//=========================================
+//       NEW STORAGE MODEL METHODS
+//=========================================
+    struct NodeItem {
+        // object's RAM instance
+        ldomNode * instance;
+        // object's data pointer
+        DataStorageItemHeader * data;
+        // empty item constructor
+        NodeItem() : instance(NULL), data(NULL) { }
+    };
+	/// for persistent text node, return wide text by index, with caching (TODO)
+    lString16 getTextNodeValue( lInt32 dataIndex );
+	/// for persistent text node, return utf8 text by index, with caching (TODO)
+    lString8 getTextNodeValue8( lInt32 dataIndex );
+    /// used by object constructor, to assign ID for created object
+    lInt32 registerNode( ldomNode * node );
+    /// used by object destructor, to remove RAM reference; leave data as is
+    void unregisterNode( ldomNode * node );
+    /// used by persistance management constructors, to replace one instance with another, deleting old instance
+    ldomNode * replaceInstance( lInt32 dataIndex, ldomNode * newInstance );
+    /// used to create instances from mmapped file, returns passed node instance
+    ldomNode * setNode( lInt32 dataIndex, ldomNode * instance, DataStorageItemHeader * data );
+    /// used by object destructor, to remove RAM reference; mark data as deleted
+    void deleteNode( ldomNode * node );
+	/// returns pointer to node data block
+	inline DataStorageItemHeader * getNodeData( lInt32 dataIndex ) { return _instanceMap[ dataIndex ].data; }
+	/// returns pointer to text node data block
+	inline TextDataStorageItem * getTextNodeData( lInt32 dataIndex ) { return (TextDataStorageItem *)_instanceMap[ dataIndex ].data;  }
+	/// returns pointer to text node data block
+	inline ElementDataStorageItem * getElementNodeData( lInt32 dataIndex ) { return (ElementDataStorageItem *)_instanceMap[ dataIndex ].data;  }
+	/// allocate data block, return pointer to allocated block
+	DataStorageItemHeader * allocData( lInt32 dataIndex, int size );
+	/// allocate text block
+	TextDataStorageItem * allocText( lInt32 dataIndex, lInt32 parentIndex, const lChar8 * text, int charCount );
+	/// allocate element
+	ElementDataStorageItem * allocElement( lInt32 dataIndex, lInt32 parentIndex, int attrCount, int childCount );
+
+    bool keepData() { return _keepData; }
+protected:
+    struct DocFileHeader {
+        //char magic[16]; //== doc_file_magic
+        lUInt32 src_file_size;
+        lUInt32 src_file_crc32;
+        lUInt32 props_offset;
+        lUInt32 props_size;
+        lUInt32 idtable_offset;
+        lUInt32 idtable_size;
+        lUInt32 pagetable_offset;
+        lUInt32 pagetable_size;
+        lUInt32 data_offset;
+        lUInt32 data_size;
+        lUInt32 data_crc32;
+        lUInt32 data_index_size;
+        lUInt32 file_size;
+
+        lUInt32 render_dx;
+        lUInt32 render_dy;
+        lUInt32 render_docflags;
+        lUInt32 render_style_hash;
+        //
+        lString16 src_file_name;
+
+        bool serialize( SerialBuf & buf );
+        bool deserialize( SerialBuf & buf );
+        DocFileHeader()
+            : file_size(0), render_dx(0), render_dy(0), render_docflags(0), render_style_hash(0)
+        {
+        }
+    };
+    DocFileHeader hdr;
+
+
+    LVPtrVector<DataBuffer> _dataBuffers; // node data buffers
+	DataBuffer * _currentBuffer;
+	int _dataBufferSize;       // single data buffer size
+    NodeItem * _instanceMap;   // Id->Instance & Id->Data map
+    int _instanceMapSize;      //
+    int _instanceMapCount;     //
     LDOMNameIdMap _elementNameTable;    // Element Name<->Id map
     LDOMNameIdMap _attrNameTable;       // Attribute Name<->Id map
-    LDOMNameIdMap _nsNameTable;         // Namespace Name<->Id map
+    LDOMNameIdMap _nsNameTable;          // Namespace Name<->Id map
     lUInt16       _nextUnknownElementId; // Next Id for unknown element
     lUInt16       _nextUnknownAttrId;    // Next Id for unknown attribute
     lUInt16       _nextUnknownNsId;      // Next Id for unknown namespace
     lvdomStyleCache _styleCache;         // Style cache
     LVStyleSheet  _stylesheet;
     lString16HashedCollection _attrValueTable;
-    LVHashTable<lUInt16,ldomNode*> _idNodeMap;
+    LVHashTable<lUInt16,lInt32> _idNodeMap; // id to data index map
     lUInt16 _idAttrId; // Id for "id" attribute name
     CRPropRef _docProps;
+    bool _keepData; // if true, node deletion will not change persistent data
+
+    LVStreamRef _map; // memory mapped file
+    LVStreamBufferRef _mapbuf; // memory mapped file buffer
+    bool _mapped; // true if document is mapped to file
+    lUInt32 _docFlags; // document flags
+
+    SerialBuf _pagesData;
 };
 
 /*
@@ -257,11 +460,11 @@ struct lxmlAttribute
     lUInt16 nsid;
     lUInt16 id;
     lUInt16 index;
-    bool compare( lUInt16 nsId, lUInt16 attrId )
+    inline bool compare( lUInt16 nsId, lUInt16 attrId )
     {
         return (nsId == nsid || nsId == LXML_NS_ANY) && (id == attrId);
     }
-    void setData( lUInt16 nsId, lUInt16 attrId, lUInt16 valueIndex )
+    inline void setData( lUInt16 nsId, lUInt16 attrId, lUInt16 valueIndex )
     {
         nsid = nsId;
         id = attrId;
@@ -271,100 +474,85 @@ struct lxmlAttribute
 
 class ldomDocument;
 
-class ldomElement;
-
-class ldomText;
-
-// fastDOM
-class ldomAttributeCollection
-{
-private:
-    lUInt16 _len;
-    lUInt16 _size;
-    lxmlAttribute * _list;
-public:
-    ldomAttributeCollection()
-    : _len(0), _size(0), _list(NULL)
-    {
-    }
-    ~ldomAttributeCollection()
-    {
-        if (_list)
-            free(_list);
-    }
-    lxmlAttribute * operator [] (int index) { return &_list[index]; }
-    const lxmlAttribute * operator [] (int index) const { return &_list[index]; }
-    lUInt16 length() const
-    {
-        return _len;
-    }
-    lUInt16 get( lUInt16 nsId, lUInt16 attrId ) const
-    {
-        for (lUInt16 i=0; i<_len; i++)
-        {
-            if (_list[i].compare( nsId, attrId ))
-                return _list[i].index;
-        }
-        return LXML_ATTR_VALUE_NONE;
-    }
-    void set( lUInt16 nsId, lUInt16 attrId, lUInt16 valueIndex )
-    {
-        // find existing
-        for (lUInt16 i=0; i<_len; i++)
-        {
-            if (_list[i].compare( nsId, attrId ))
-            {
-                _list[i].index = valueIndex;
-                return;
-            }
-        }
-        // add
-        if (_len>=_size)
-        {
-            _size += 4;
-            _list = (lxmlAttribute*) realloc( _list, _size*sizeof(lxmlAttribute) );
-        }
-        _list[ _len++ ].setData(nsId, attrId, valueIndex);
-    }
-};
 
 #define LDOM_ALLOW_NODE_INDEX 0
 
-/// fastDOM NODE interface
+/// fastDOM NODE interface - base class for all text and element node implementations
 class ldomNode
 {
     friend class ldomElement;
-    // 0: this   [4]
+    friend class lxmlDocBase;
+    // vtable                    0: [4]
 protected:
-    ldomElement * _parent;  // 4: [4]
+    /// document which owns this node
+    ldomDocument * _document; // 4: [4]
+    /// data index of parent node
+    lInt32 _parentIndex;      // 8: [4]
+    /// data index of this node
+    lInt32 _dataIndex;        //12: [4]
+
 #if (LDOM_ALLOW_NODE_INDEX==1)
+	/// optional index of this node in parent's children collection
     lUInt32 _index;
 #endif
-    lUInt8 _type;           // 8: [1]
-    lUInt8 _level;          // 9: [1]
+
+    virtual void addChild( lInt32 ) { }
+
+    ldomNode( const ldomNode * node )
+    : _document(node->_document), _parentIndex( node->_parentIndex ), _dataIndex( node->_dataIndex )
+#if (LDOM_ALLOW_NODE_INDEX==1)
+    , _index( node->getNodeIndex() )
+#endif
+    {
+	}
+
+    ldomNode( ldomDocument * document, lInt32 parentIndex, lInt32 dataIndex )
+        : _document( document ), _parentIndex( parentIndex ), _dataIndex( dataIndex )
+    {
+    }
+
 public:
-    ldomNode( ldomElement * parent, lUInt8 type, lUInt8 level, lUInt32 index )
-    : _parent(parent)
+    ldomNode( ldomDocument * document, ldomNode * parent, lUInt32
+#if (LDOM_ALLOW_NODE_INDEX==1)
+              index
+#endif
+              )
+    : _document(document), _parentIndex( parent ? parent->getDataIndex() : 0 )
 #if (LDOM_ALLOW_NODE_INDEX==1)
     , _index(index)
 #endif
-    , _type(type), _level(level) { }
+    {
+		_dataIndex  = ((lxmlDocBase*)document)->registerNode(this);
+	}
+	/// destructor
     virtual ~ldomNode();
-    // inline functions
-    virtual ldomDocument * getDocument() const = 0;
-    inline ldomElement * getParentNode() const { return _parent; }
-    inline lUInt8 getNodeType() const { return _type; }
-    inline lUInt8 getNodeLevel() const { return _level; }
+    /// returns true if node is stored in persistent storage
+    virtual bool isPersistent() { return false; }
+
+    /// returns data index of node's registration in document data storage
+    inline lInt32 getDataIndex() { return _dataIndex; }
+    /// returns pointer to document
+    inline ldomDocument * getDocument() const { return _document; }
+	/// returns pointer to parent node, NULL if node has no parent
+    inline ldomNode * getParentNode() const { return _parentIndex > 0 ? ((lxmlDocBase*)_document)->getNodeInstance(_parentIndex) : NULL; }
+	/// returns node type, either LXML_TEXT_NODE or LXML_ELEMENT_NODE
+    virtual lUInt8 getNodeType() const = 0;
+	/// returns node level, 0 is root node
+    virtual lUInt8 getNodeLevel() const;
     /// returns node index
 #if (LDOM_ALLOW_NODE_INDEX==1)
     inline lUInt32 getNodeIndex() const { return _index; }
 #else
     lUInt32 getNodeIndex() const;
 #endif
+	/// returns true if this pointer is NULL
     inline bool isNull() const { return this == NULL; }
-    inline bool isRoot() const { return _parent == NULL; }
-    inline bool isText() const { return _type == LXML_TEXT_NODE; }
-    inline bool isElement() const { return _type == LXML_ELEMENT_NODE; }
+	/// returns true if node is document's root
+    inline bool isRoot() const { return _parentIndex <= 0; }
+	/// returns true if node is text
+    inline bool isText() const { return getNodeType() == LXML_TEXT_NODE; }
+	/// returns true if node is element
+    inline bool isElement() const { return getNodeType() == LXML_ELEMENT_NODE; }
     /// returns true if node is and element that has children
     inline bool hasChildren() { return getChildCount()!=0; }
     /// returns true if node is element has attributes
@@ -382,201 +570,232 @@ public:
     /// returns attribute value by attribute name id and namespace id
     virtual const lString16 & getAttributeValue( lUInt16 nsid, lUInt16 id ) const = 0;
     /// returns attribute value by attribute name
-    virtual const lString16 & getAttributeValue( const lChar16 * attrName ) const
+    inline const lString16 & getAttributeValue( const lChar16 * attrName ) const
     {
         return getAttributeValue( NULL, attrName );
     }
     /// returns attribute value by attribute name and namespace
     virtual const lString16 & getAttributeValue( const lChar16 * nsName, const lChar16 * attrName ) const;
     /// returns attribute by index
-    virtual const lxmlAttribute * getAttribute( lUInt32 index ) const = 0;
+    virtual const lxmlAttribute * getAttribute( lUInt32 ) const = 0;
     /// returns true if element node has attribute with specified name id and namespace id
-    virtual bool hasAttribute( lUInt16 nsid, lUInt16 id ) const = 0;
+    virtual bool hasAttribute( lUInt16 nsId, lUInt16 attrId ) const = 0;
     /// returns attribute name by index
-    const lString16 & getAttributeName( lUInt32 index ) const { return lString16::empty_str; }
+    virtual const lString16 & getAttributeName( lUInt32 ) const { return lString16::empty_str; }
     /// sets attribute value
-    virtual void setAttributeValue( lUInt16 nsid, lUInt16 id, const lChar16 * value ) { }
+    virtual void setAttributeValue( lUInt16 , lUInt16 , const lChar16 *  ) { }
     /// returns element type structure pointer if it was set in document for this element name
-    virtual const elem_def_t * getElementTypePtr() = 0;
+    virtual const css_elem_def_props_t * getElementTypePtr() = 0;
     /// returns element name id
     virtual lUInt16 getNodeId() const = 0;
     /// returns element namespace id
     virtual lUInt16 getNodeNsId() const = 0;
+    /// replace element name id with another value
+    virtual void setNodeId( lUInt16 ) { }
     /// returns element name
     virtual const lString16 & getNodeName() const = 0;
     /// returns element namespace name
     virtual const lString16 & getNodeNsName() const = 0;
-    /// returns text node text
-    virtual lString16 getText( lChar16 blockDelimiter = 0 ) const = 0;
-    /// sets text node text
-    virtual void setText( lString16 value ) { }
+    /// returns text node text as wide string
+    virtual lString16 getText( lChar16 blockDelimiter = 0 ) const;
+    /// returns text node text as utf8 string
+    virtual lString8 getText8( lChar8 blockDelimiter = 0 ) const;
+    /// sets text node text as wide string
+    virtual void setText( lString16 ) { }
+    /// sets text node text as utf8 string
+    virtual void setText8( lString8 ) { }
     /// returns child node by index
     virtual ldomNode * getChildNode( lUInt32 index ) const = 0;
     /// returns node absolute rectangle
-    virtual void getAbsRect( lvRect & rect ) { }
+    virtual void getAbsRect( lvRect & rect );
     /// returns render data structure
-    virtual lvdomElementFormatRec * getRenderData()
-    {
-        return NULL;
-    }
+    virtual lvdomElementFormatRec * getRenderData() { return NULL; }
     /// sets node rendering structure pointer
-    virtual void setRenderData( lvdomElementFormatRec * pRenderData )
-    {
-    }
+    virtual void clearRenderData() { }
     /// calls specified function recursively for all elements of DOM tree
-    virtual void recurseElements( void (*pFun)( ldomNode * node ) )
-    {
-    }
+    virtual void recurseElements( void (*pFun)( ldomNode * node ) );
     /// calls specified function recursively for all nodes of DOM tree
-    virtual void recurseNodes( void (*pFun)( ldomNode * node ) )
-    {
-        pFun( this );
-    }
+    virtual void recurseNodes( void (*pFun)( ldomNode * node ) );
 
 
     // inline, dummy namespace
 
     /// returns attribute value by attribute name id
-    const lString16 & getAttributeValue( lUInt16 id ) const
+    inline const lString16 & getAttributeValue( lUInt16 id ) const
     {
         return getAttributeValue( LXML_NS_ANY, id );
     }
     /// returns true if element node has attribute with specified name id
-    bool hasAttribute( lUInt16 id ) const
+    inline bool hasAttribute( lUInt16 id ) const
     {
         return hasAttribute( LXML_NS_ANY, id );
     }
     /// returns first text child element
-    ldomText * getFirstTextChild();
+    virtual ldomNode * getFirstTextChild();
     /// returns last text child element
-    ldomText * getLastTextChild();
+    virtual ldomNode * getLastTextChild();
 #if BUILD_LITE!=1
     /// find node by coordinates of point in formatted document
-    ldomElement * elementFromPoint( lvPoint pt );
+    virtual ldomNode * elementFromPoint( lvPoint pt );
     /// find final node by coordinates of point in formatted document
-    ldomElement * finalBlockFromPoint( lvPoint pt );
+    virtual ldomNode * finalBlockFromPoint( lvPoint pt );
 #endif
+
+    // rich interface stubs for supporting Element operations
+    /// returns rendering method
+    virtual lvdom_element_render_method  getRendMethod() { return erm_invisible; }
+    /// sets rendering method
+    virtual void setRendMethod( lvdom_element_render_method ) { }
+    /// returns element style record
+    virtual css_style_ref_t getStyle() { return css_style_ref_t(); }
+    /// returns element font
+    virtual font_ref_t getFont() { return font_ref_t(); }
+    /// sets element font
+    virtual void setFont( font_ref_t ) { }
+    /// sets element style record
+    virtual void setStyle( css_style_ref_t & ) { }
+
+    /// returns first child node
+    virtual ldomNode * getFirstChild() const { return NULL; }
+    /// returns last child node
+    virtual ldomNode * getLastChild() const { return NULL; }
+    /// removes and deletes last child element
+    virtual void removeLastChild() { }
+    /// move range of children startChildIndex to endChildIndex inclusively to specified element
+    virtual void moveItemsTo( ldomNode *, int , int ) { }
+    /// find child element by tag id
+    ldomNode * findChildElement( lUInt16 nsid, lUInt16 id, int index );
+    /// find child element by id path
+    ldomNode * findChildElement( lUInt16 idPath[] );
+    /// inserts child element
+    virtual ldomNode * insertChildElement( lUInt32 index, lUInt16 nsid, lUInt16 id ) = 0;
+    /// inserts child element
+    virtual ldomNode * insertChildElement( lUInt16 id ) = 0;
+    /// inserts child text
+    virtual ldomNode * insertChildText( lUInt32 index, lString16 value ) = 0;
+    /// inserts child text
+    virtual ldomNode * insertChildText( lString16 value ) = 0;
+    /// remove child
+    virtual ldomNode * removeChild( lUInt32 index ) = 0;
+    /// creates stream to read base64 encoded data from element
+    LVStreamRef createBase64Stream();
+#if BUILD_LITE!=1
+    /// returns object image source
+    LVImageSourceRef getObjectImageSource();
+    /// formats final block
+    int renderFinalBlock(  LFormattedTextRef & frmtext, int width );
+#endif
+    /// replace node with r/o persistent implementation
+    virtual ldomNode * persist() { return this; }
+    /// replace node with r/w implementation
+    virtual ldomNode * modify() { return this; }
+protected:
+    /// override to avoid deleting children while replacing
+    virtual void prepareReplace() { }
 };
 
 class ldomDocument;
 
 
-class ldomText : public ldomNode
-{
-private:
-#if (USE_DOM_UTF8_STORAGE==1)
-    lString8 _value;
-#else
-    lString16 _value;
-#endif
-
-public:
-#if (LDOM_USE_OWN_MEM_MAN==1)
-    static ldomMemManStorage * pmsHeap;
-    void * operator new( size_t size )
-    {
-        if (pmsHeap == NULL)
-        {
-            pmsHeap = new ldomMemManStorage(sizeof(ldomText));
-        }
-        return pmsHeap->alloc();
-    }
-    void operator delete( void * p )
-    {
-        pmsREF->free((ldomMemBlock *)p);
-    }
-#endif
-    ldomText( ldomElement * parent, lUInt8 level, lUInt32 index, lString16 value)
-    : ldomNode( parent, LXML_TEXT_NODE, level, index )
-    {
-#if (USE_DOM_UTF8_STORAGE==1)
-        _value = UnicodeToUtf8(value);
-#else
-        _value = value;
-#endif
-    }
-    virtual ~ldomText() { }
-    virtual ldomDocument * getDocument() const;
-    /// returns element child count
-    virtual lUInt32 getChildCount() const { return 0; }
-    /// returns element attribute count
-    virtual lUInt32 getAttrCount() const { return 0; }
-    /// returns attribute value by attribute name id and namespace id
-    virtual const lString16 & getAttributeValue( lUInt16 nsid, lUInt16 id ) const
-    {
-        return lString16::empty_str;
-    }
-    /// returns attribute by index
-    virtual const lxmlAttribute * getAttribute( lUInt32 index ) const { return NULL; }
-    /// returns true if element node has attribute with specified name id and namespace id
-    virtual bool hasAttribute( lUInt16 nsid, lUInt16 id ) const { return false; }
-    /// returns element type structure pointer if it was set in document for this element name
-    virtual const elem_def_t * getElementTypePtr() { return NULL; }
-    /// returns element name id
-    virtual lUInt16 getNodeId() const { return 0; }
-    /// returns element namespace id
-    virtual lUInt16 getNodeNsId() const { return 0; }
-    /// returns element name
-    virtual const lString16 & getNodeName() const { return lString16::empty_str; }
-    /// returns element namespace name
-    virtual const lString16 & getNodeNsName() const { return lString16::empty_str; }
-    /// returns text node text
-    virtual lString16 getText( lChar16 blockDelimiter=0 ) const
-    {
-#if (USE_DOM_UTF8_STORAGE==1)
-        return Utf8ToUnicode(_value);
-#else
-        return _value;
-#endif
-    }
-    /// sets text node text
-    virtual void setText( lString16 value )
-    {
-#if (USE_DOM_UTF8_STORAGE==1)
-        _value = UnicodeToUtf8(value);
-#else
-        _value = value;
-#endif
-    }
-    /// returns child node by index
-    virtual ldomNode * getChildNode( lUInt32 index ) const { return NULL; }
-};
-
 /**
- * @brief XPointer/XPath object
+ * @brief XPointer/XPath object with reference counting.
+ * 
  */
 class ldomXPointer
 {
 protected:
+	struct XPointerData {
+	protected:
+		ldomDocument * _doc;
+		lInt32 _dataIndex;
+		int _offset;
+		int _refCount;
+	public:
+		inline void addRef() { _refCount++; }
+		inline void release() { if ( (--_refCount)==0 ) delete this; }
+		// create empty
+		XPointerData() : _doc(NULL), _dataIndex(0), _offset(0), _refCount(1) { }
+		// create instance
+		XPointerData( ldomNode * node, int offset ) 
+			: _doc(node?node->getDocument():NULL)
+			, _dataIndex(node?node->getDataIndex():0)
+			, _offset( offset )
+			, _refCount( 1 )
+		{ }
+		// clone
+		XPointerData( const XPointerData & v )  : _doc(v._doc), _dataIndex(v._dataIndex), _offset(v._offset), _refCount(1) { }
+		inline ldomDocument * getDocument() { return _doc; }
+		inline bool operator == (const XPointerData & v) const
+		{
+			return _doc==v._doc && _dataIndex == v._dataIndex && _offset == v._offset;
+		}
+		inline bool operator != (const XPointerData & v) const
+		{
+			return _doc!=v._doc || _dataIndex != v._dataIndex || _offset != v._offset;
+		}
+		inline bool isNull() { return _dataIndex==0; }
+		inline ldomNode * getNode() { return _dataIndex>0 ? ((lxmlDocBase*)_doc)->getNodeInstance( _dataIndex ) : NULL; }
+		inline int getOffset() { return _offset; }
+		inline void setNode( ldomNode * node )
+		{
+			if ( node ) {
+				_doc = node->getDocument();
+				_dataIndex = node->getDataIndex();
+			} else {
+				_doc = NULL;
+				_dataIndex = 0;
+			}
+		}
+		inline void setOffset( int offset ) { _offset = offset; }
+		~XPointerData() { }
+	};
 	/// node pointer
-	ldomNode * _node;
+	//ldomNode * _node;
 	/// offset within node for pointer, -1 for xpath
-	int _offset;
-public:
-    /// returns node pointer
-	ldomNode * getNode() const { return _node; }
-    /// returns offset within node
-	int getOffset() const { return _offset; }
-    /// default constructor makes NULL pointer
-	ldomXPointer()
-		: _node(NULL), _offset(-1)
+	//int _offset;
+	// cloning constructor
+	ldomXPointer( const XPointerData * data )
+		: _data( new XPointerData( *data ) )
 	{
 	}
+public:
+	XPointerData * _data;
+	/// 
+	inline ldomDocument * getDocument() { return _data->getDocument(); }
+    /// returns node pointer
+	inline ldomNode * getNode() const { return _data->getNode(); }
+    /// returns offset within node
+	inline int getOffset() const { return _data->getOffset(); }
+	/// set pointer node
+	inline void setNode( ldomNode * node ) { _data->setNode( node ); }
+	/// set pointer offset within node
+	inline void setOffset( int offset ) { _data->setOffset( offset ); }
+    /// default constructor makes NULL pointer
+	ldomXPointer()
+		: _data( new XPointerData() )
+	{
+	}
+	/// remove reference
+	~ldomXPointer() { _data->release(); }
     /// copy constructor
 	ldomXPointer( const ldomXPointer& v )
-		: _node(v._node), _offset(v._offset)
+		: _data(v._data)
 	{
+		_data->addRef();
 	}
     /// assignment operator
 	ldomXPointer & operator =( const ldomXPointer& v )
 	{
-        _node = v._node;
-        _offset = v._offset;
+		if ( _data==v._data )
+			return *this;
+		_data->release();
+		_data = v._data;
+		_data->addRef();
         return *this;
 	}
     /// constructor
 	ldomXPointer( ldomNode * node, int offset )
-		: _node(node), _offset(offset)
+		: _data( new XPointerData( node, offset ) )
 	{
 	}
     /// get pointer for relative path
@@ -590,32 +809,32 @@ public:
     /// returns true for NULL pointer
 	bool isNull() const
 	{
-		return _node==NULL;
+		return _data->isNull();
 	}
     /// returns true if object is pointer
 	bool isPointer() const
 	{
-		return _node!=NULL && _offset>=0;
+		return !_data->isNull() && getOffset()>=0;
 	}
     /// returns true if object is path (no offset specified)
 	bool isPath() const
 	{
-		return _node!=NULL && _offset==-1;
+		return !_data->isNull() && getOffset()==-1;
 	}
     /// returns true if pointer is NULL
 	bool operator !() const
 	{
-		return _node==NULL;
+		return _data->isNull();
 	}
     /// returns true if pointers are equal
 	bool operator == (const ldomXPointer & v) const
 	{
-		return _node==v._node && _offset==v._offset;
+		return *_data == *v._data;
 	}
     /// returns true if pointers are not equal
 	bool operator != (const ldomXPointer & v) const
 	{
-		return _node!=v._node || _offset!=v._offset;
+		return *_data != *v._data;
 	}
 #if BUILD_LITE!=1
     /// returns caret rectangle for pointer inside formatted document
@@ -628,15 +847,26 @@ public:
     /// returns XPath node text
     lString16 getText(  lChar16 blockDelimiter=0 )
     {
-        if ( !_node )
+		ldomNode * node = getNode();
+        if ( !node )
             return lString16();
-        return _node->getText( blockDelimiter );
+        return node->getText( blockDelimiter );
     }
     /// returns href attribute of <A> element, null string if not found
     lString16 getHRef();
+	/// create a copy of pointer data
+	ldomXPointer * clone()
+	{
+		return new ldomXPointer( _data );
+	}
+    /// returns true if current node is element
+    inline bool isElement() const { return !isNull() && getNode()->isElement(); }
+    /// returns true if current node is element
+    inline bool isText() const { return !isNull() && getNode()->isText(); }
 };
 
 #define MAX_DOM_LEVEL 64
+/// Xpointer optimized to iterate through DOM tree
 class ldomXPointerEx : public ldomXPointer
 {
 protected:
@@ -650,25 +880,25 @@ public:
     int getLevel() { return _level; }
     /// default constructor
     ldomXPointerEx()
-    : ldomXPointer()
+	    : ldomXPointer()
     {
         initIndex();
     }
     /// constructor by node pointer and offset
     ldomXPointerEx(  ldomNode * node, int offset )
-    : ldomXPointer( node, offset )
+		: ldomXPointer( node, offset )
     {
         initIndex();
     }
     /// copy constructor
     ldomXPointerEx( const ldomXPointer& v )
-    : ldomXPointer( v )
+		: ldomXPointer( v._data )
     {
         initIndex();
     }
     /// copy constructor
     ldomXPointerEx( const ldomXPointerEx& v )
-    : ldomXPointer( v )
+		: ldomXPointer( v._data )
     {
         _level = v._level;
         for ( int i=0; i<_level; i++ )
@@ -677,21 +907,27 @@ public:
     /// assignment operator
     ldomXPointerEx & operator =( const ldomXPointer& v )
     {
-        _node = v.getNode();
-        _offset = v.getOffset();
+		if ( _data==v._data )
+			return *this;
+		_data->release();
+		_data = new XPointerData( *v._data );
         initIndex();
         return *this;
     }
     /// assignment operator
     ldomXPointerEx & operator =( const ldomXPointerEx& v )
     {
-        _node = v._node;
-        _offset = v._offset;
+		if ( _data==v._data )
+			return *this;
+		_data->release();
+		_data = new XPointerData( *v._data );
         _level = v._level;
         for ( int i=0; i<_level; i++ )
             _indexes[ i ] = v._indexes[i];
         return *this;
     }
+    /// searches path for element with specific id, returns level at which element is founs, 0 if not found
+    int findElementInPath( lUInt16 id );
     /// compare two pointers, returns -1, 0, +1
     int compare( const ldomXPointerEx& v ) const;
     /// move to next sibling
@@ -722,10 +958,6 @@ public:
     bool ensureFinal();
     /// returns true if current node is visible element with render method == erm_final
     bool isVisibleFinal();
-    /// returns true if current node is element
-    bool isElement() { return _node!=NULL && _node->isElement(); }
-    /// returns true if current node is element
-    bool isText() { return _node!=NULL && _node->isText(); }
     /// move to next final visible node (~paragraph)
     bool nextVisibleFinal();
     /// move to previous final visible node (~paragraph)
@@ -748,11 +980,6 @@ public:
     void recurseElements( void (*pFun)( ldomXPointerEx & node ) );
     /// calls specified function recursively for all nodes of DOM tree
     void recurseNodes( void (*pFun)( ldomXPointerEx & node ) );
-    /// set new offset value
-    void setOffset( int offset )
-    {
-        _offset = offset;
-    }
 };
 
 class ldomXRange;
@@ -763,22 +990,22 @@ public:
     /// destructor
     virtual ~ldomNodeCallback() { }
     /// called for each found text fragment in range
-    virtual void onText( ldomXRange * nodeRange ) { }
+    virtual void onText( ldomXRange * ) { }
     /// called for each found node in range
-    virtual bool onElement( ldomXPointerEx * ptr ) { return true; }
+    virtual bool onElement( ldomXPointerEx * ) { return true; }
 };
 
 /// range for word inside text node
 class ldomWord
 {
-    ldomText * _node;
+    ldomNode * _node;
     int _start;
     int _end;
 public:
     ldomWord( )
     : _node(NULL), _start(0), _end(0)
     { }
-    ldomWord( ldomText * node, int start, int end )
+    ldomWord( ldomNode * node, int start, int end )
     : _node(node), _start(start), _end(end)
     { }
     ldomWord( const ldomWord & v )
@@ -794,7 +1021,7 @@ public:
     /// returns true if object doesn't point valid word
     bool isNull() { return _node==NULL || _start<0 || _end<=_start; }
     /// get word text node pointer
-    ldomText * getNode() const { return _node; }
+    ldomNode * getNode() const { return _node; }
     /// get word start offset
     int getStart() const { return _start; }
     /// get word end offset
@@ -894,7 +1121,7 @@ public:
     bool getRect( lvRect & rect );
 #endif
     /// returns nearest common element for start and end points
-    ldomElement * getNearestCommonParent();
+    ldomNode * getNearestCommonParent();
 
     /// searches for specified text inside range
     bool findText( lString16 pattern, bool caseInsensitive, LVArray<ldomWord> & words, int maxCount );
@@ -988,24 +1215,6 @@ public:
 
 
 
-class ldomElement;
-#if COMPACT_DOM == 1
-class ldomTextRef;
-#endif
-
-#if BUILD_LITE!=1
-/// final block cache
-typedef LVRef<LFormattedText> LFormattedTextRef;
-typedef LVCacheMap< ldomElement *, LFormattedTextRef> CVRendBlockCache;
-#endif
-
-/// docFlag mask, enable internal stylesheet of document and style attribute of elements
-#define DOC_FLAG_ENABLE_INTERNAL_STYLES 1
-/// docFlag mask, enable paperbook-like footnotes
-#define DOC_FLAG_ENABLE_FOOTNOTES       2
-/// default docFlag set
-#define DOC_FLAG_DEFAULTS (DOC_FLAG_ENABLE_INTERNAL_STYLES|DOC_FLAG_ENABLE_FOOTNOTES)
-
 class ldomNavigationHistory
 {
     private:
@@ -1054,69 +1263,42 @@ class ldomDocument : public lxmlDocBase
 {
     friend class ldomDocumentWriter;
 private:
-    ldomElement * _root;
     font_ref_t _def_font; // default font
     css_style_ref_t _def_style;
     int _page_height;
     ldomXRangeList _selections;
 
-#if COMPACT_DOM == 1
-    LVXMLTextCache _textcache;
-    int            _min_ref_text_size;
-#endif
-
 #if BUILD_LITE!=1
     /// final block cache
     CVRendBlockCache _renderedBlockCache;
 #endif
-    lUInt32 _docFlags;
     LVContainerRef _container;
-    lString16 _codeBase;
+
+protected:
+
+    /// uniquie id of file format parsing option (usually 0, but 1 for preformatted text files)
+    int getPersistenceFlags();
 
 public:
 
-    lString16 getCodeBase() { return _codeBase; }
-    void setCodeBase(lString16 codeBase) { _codeBase = codeBase; }
+    /// save document formatting parameters after render
+    void updateRenderContext( LVRendPageList * pages, int dx, int dy );
+    /// check document formatting parameters before render - whether we need to reformat; returns false if render is necessary
+    bool checkRenderContext( LVRendPageList * pages, int dx, int dy );
+
+    /// try opening from cache file, find by source file name (w/o path) and crc32
+    virtual bool openFromCache( );
+    /// swap to cache file, find by source file name (w/o path) and crc32
+    virtual bool swapToCache( lUInt32 reservedDataSize=0 );
+    /// saves recent changes to mapped file
+    virtual bool updateMap();
+
+
     LVContainerRef getContainer() { return _container; }
     void setContainer( LVContainerRef cont ) { _container = cont; }
 
-    inline bool getDocFlag( lUInt32 mask )
-    {
-        return (_docFlags & mask) != 0;
-    }
 
-    inline void setDocFlag( lUInt32 mask, bool value )
-    {
-        if ( value )
-            _docFlags |= mask;
-        else
-            _docFlags &= ~mask;
-    }
-
-    inline lUInt32 getDocFlags()
-    {
-        return _docFlags;
-    }
-
-    inline void setDocFlags( lUInt32 value )
-    {
-        _docFlags = value;
-    }
-
-#if COMPACT_DOM == 1
-    ldomDocument(LVStreamRef stream, int min_ref_text_size);
-    lString16 getTextNodeValue( const ldomTextRef * txt );
-    void setMinRefTextSize( int size )
-    {
-        _min_ref_text_size = size;
-    }
-    bool allowTextRefForSize( int size )
-    {
-        return _min_ref_text_size>0 && size>_min_ref_text_size;
-    }
-#else
     ldomDocument();
-#endif
     /// creates empty document which is ready to be copy target of doc partial contents
     ldomDocument( ldomDocument & doc );
 
@@ -1134,13 +1316,9 @@ public:
     css_style_ref_t getDefaultStyle() { return _def_style; }
     /// destructor
     virtual ~ldomDocument();
-    /// returns root element
-    ldomElement * getRootNode() { return _root; }
-    /// returns main element (i.e. FictionBook for FB2)
-    ldomElement * getMainNode();
 #if BUILD_LITE!=1
     /// renders (formats) document in memory
-    virtual int render( LVRendPageContext & context, int width, int y0, font_ref_t def_font, int def_interline_space );
+    virtual int render( LVRendPageList * pages, int width, int dy, bool showCover, int y0, font_ref_t def_font, int def_interline_space );
 #endif
     /// create xpointer from pointer string
     ldomXPointer createXPointer( const lString16 & xPointerStr );
@@ -1157,6 +1335,7 @@ public:
             return lString16();
         return node->getText();
     }
+
     /// create xpointer from relative pointer string
     ldomXPointer createXPointer( ldomNode * baseNode, const lString16 & xPointerStr );
 #if BUILD_LITE!=1
@@ -1169,330 +1348,6 @@ public:
 #endif
 };
 
-#if COMPACT_DOM == 1
-class ldomTextRef : public ldomNode
-{
-    friend class ldomDocument;
-private:
-
-    lUInt16 dataFormat; // format flags
-    lUInt32 dataSize;   // bytes
-    lUInt32 fileOffset; // offset from beginning of stream
-public:
-#if (LDOM_USE_OWN_MEM_MAN == 1)
-    static ldomMemManStorage * pmsHeap;
-    void * operator new( size_t size )
-    {
-        if (pmsHeap == NULL)
-        {
-            pmsHeap = new ldomMemManStorage(sizeof(ldomTextRef));
-        }
-        return pmsHeap->alloc();
-    }
-    void operator delete( void * p )
-    {
-        pmsREF->free((ldomMemBlock *)p);
-    }
-#endif
-    ldomTextRef( ldomElement * parent, lUInt8 level, lUInt32 index, lUInt32 pos, lUInt32 size, lUInt16 flags)
-    : ldomNode( parent, LXML_TEXT_NODE, level, index ), dataFormat(flags), dataSize(size), fileOffset(pos)
-    { }
-    virtual ~ldomTextRef() { }
-    virtual ldomDocument * getDocument() const;
-    /// returns element child count
-    virtual lUInt32 getChildCount() const { return 0; }
-    /// returns element attribute count
-    virtual lUInt32 getAttrCount() const { return 0; }
-    /// returns attribute value by attribute name id and namespace id
-    virtual const lString16 & getAttributeValue( lUInt16 nsid, lUInt16 id ) const
-    {
-        return lString16::empty_str;
-    }
-    /// returns attribute by index
-    virtual const lxmlAttribute * getAttribute( lUInt32 index ) const { return NULL; }
-    /// returns true if element node has attribute with specified name id and namespace id
-    virtual bool hasAttribute( lUInt16 nsid, lUInt16 id ) const { return false; }
-    /// returns element type structure pointer if it was set in document for this element name
-    virtual const elem_def_t * getElementTypePtr() { return NULL; }
-    /// returns element name id
-    virtual lUInt16 getNodeId() const { return 0; }
-    /// returns element namespace id
-    virtual lUInt16 getNodeNsId() const { return 0; }
-    /// returns element name
-    virtual const lString16 & getNodeName() const { return lString16::empty_str; }
-    /// returns element namespace name
-    virtual const lString16 & getNodeNsName() const { return lString16::empty_str; }
-    /// returns text node text
-    virtual lString16 getText( lChar16 blockDelimiter=0 ) const { return getDocument()->getTextNodeValue(this); }
-    /// sets text node text
-    virtual void setText( lString16 value );
-    /// returns child node by index
-    virtual ldomNode * getChildNode( lUInt32 index ) const { return NULL; }
-};
-#endif
-
-class ldomElement : public ldomNode
-{
-private:
-    ldomAttributeCollection _attrs;
-    lUInt16 _id;
-    lUInt16 _nsid;
-    lvdomElementFormatRec * _renderData;   // used by rendering engine
-    LVPtrVector < ldomNode > _children;
-    ldomDocument * _document;
-    css_style_ref_t _style;
-    font_ref_t      _font;
-    lvdom_element_render_method _rendMethod;
-public:
-#if (LDOM_USE_OWN_MEM_MAN == 1)
-    static ldomMemManStorage * pmsHeap;
-    void * operator new( size_t size )
-    {
-        if (pmsHeap == NULL)
-        {
-            pmsHeap = new ldomMemManStorage(sizeof(ldomElement));
-        }
-        return pmsHeap->alloc();
-    }
-    void operator delete( void * p )
-    {
-        pmsHeap->free((ldomMemBlock *)p);
-    }
-#endif
-    ldomElement( ldomDocument * document, ldomElement * parent, lUInt8 level, lUInt32 index, lUInt16 nsid, lUInt16 id )
-    : ldomNode( parent, LXML_ELEMENT_NODE, level, index ), _id(id), _nsid(nsid), _renderData(NULL), _document(document), _rendMethod(erm_invisible)
-    { }
-    virtual ~ldomElement() { if (_renderData) delete _renderData; }
-    /// returns rendering method
-    lvdom_element_render_method  getRendMethod() { return _rendMethod; }
-    /// sets rendering method
-    void setRendMethod( lvdom_element_render_method  method ) { _rendMethod=method; }
-    /// returns element style record
-    css_style_ref_t getStyle() { return _style; }
-    /// returns element font
-    font_ref_t getFont() { return _font; }
-    /// sets element font
-    void setFont( font_ref_t font ) { _font = font; }
-    /// sets element style record
-    void setStyle( css_style_ref_t & style ) { _style = style; }
-    /// returns document
-    virtual ldomDocument * getDocument() const { return _document; }
-    /// returns element child count
-    virtual lUInt32 getChildCount() const { return _children.length(); }
-    /// returns first child node
-    virtual ldomNode * getFirstChild() const { return _children.length()>0?_children[0]:NULL; }
-    /// returns last child node
-    virtual ldomNode * getLastChild() const { return _children.length()>0?_children[_children.length()-1]:NULL; }
-    /// removes and deletes last child element
-    virtual void removeLastChild()
-    {
-        if ( _children.length()>0 )
-            delete _children.remove( _children.length() - 1 );
-    }
-    /// returns element attribute count
-    virtual lUInt32 getAttrCount() const { return _attrs.length(); }
-    /// returns attribute value by attribute name id and namespace id
-    virtual const lString16 & getAttributeValue( lUInt16 nsid, lUInt16 id ) const
-    {
-        lUInt16 val_id = _attrs.get( nsid, id );
-        if (val_id!=LXML_ATTR_VALUE_NONE)
-            return _document->getAttrValue( val_id );
-        else
-            return lString16::empty_str;
-    }
-    /// returns attribute value by attribute name id
-    const lString16 & getAttributeValue( lUInt16 id ) const
-    {
-        return getAttributeValue( LXML_NS_ANY, id );
-    }
-    /// sets attribute value
-    virtual void setAttributeValue( lUInt16 nsid, lUInt16 id, const lChar16 * value )
-    {
-        lUInt16 valueId = _document->getAttrValueIndex( value );
-        _attrs.set(nsid, id, valueId);
-        if (nsid == LXML_NS_NONE)
-            _document->onAttributeSet( id, valueId, this );
-    }
-    /// move range of children startChildIndex to endChildIndex inclusively to specified element
-    virtual void moveItemsTo( ldomElement * destination, int startChildIndex, int endChildIndex );
-    /// returns attribute by index
-    virtual const lxmlAttribute * getAttribute( lUInt32 index ) const { return _attrs[index]; }
-    /// returns attribute value by attribute name id
-    const lString16 & getAttributeName( lUInt32 index ) const { return _document->getAttrName(_attrs[index]->id); }
-    /// returns true if element node has attribute with specified name id and namespace id
-    virtual bool hasAttribute( lUInt16 nsid, lUInt16 id ) const { return _attrs.get( nsid, id )!=LXML_ATTR_VALUE_NONE; }
-    /// returns element type structure pointer if it was set in document for this element name
-    virtual const elem_def_t * getElementTypePtr() { return _document->getElementTypePtr(_id); }
-    /// returns element name id
-    virtual lUInt16 getNodeId() const { return _id; }
-    /// replace element name id with another value
-    virtual void setNodeId( lUInt16 id ) { _id = id; }
-    /// returns element namespace id
-    virtual lUInt16 getNodeNsId() const { return _nsid; }
-    /// returns element name
-    virtual const lString16 & getNodeName() const { return _document->getElementName(_id); }
-    /// returns element namespace name
-    virtual const lString16 & getNodeNsName() const { return _document->getNsName(_nsid); }
-    /// returns concatenation of all child node text
-    virtual lString16 getText( lChar16 blockDelimiter=0 ) const;
-    /// returns child node by index
-    virtual ldomNode * getChildNode( lUInt32 index ) const
-    {
-        return _children[index];
-    }
-    /// returns render data structure
-    virtual lvdomElementFormatRec * getRenderData()
-    {
-        if ( !_renderData )
-            _renderData = new lvdomElementFormatRec;
-        return _renderData;
-    }
-    /// sets node rendering structure pointer
-    virtual void setRenderData( lvdomElementFormatRec * pRenderData )
-    {
-        if (_renderData)
-            delete _renderData;
-        _renderData = pRenderData;
-    }
-    /// returns node absolute rectangle
-    virtual void getAbsRect( lvRect & rect );
-
-    ldomElement * findChildElement( lUInt16 nsid, lUInt16 id, int index )
-    {
-        if ( !this )
-            return NULL;
-        ldomElement * res = NULL;
-        int k = 0;
-        for ( int i=0; i<_children.length(); i++ )
-        {
-            ldomElement * p = (ldomElement*)_children[i];
-            if ( !p->isElement() )
-                continue;
-            if ( p->getNodeId() == id && ( (p->getNodeNsId() == nsid) || (nsid==LXML_NS_ANY) ) )
-            {
-                if ( k==index || index==-1 )
-                    res = p;
-                k++;
-            }
-        }
-        if ( !res || (index==-1 && k>1) )
-            return NULL;
-        return res;
-    }
-
-    /// inserts child element
-    ldomElement * insertChildElement( lUInt32 index, lUInt16 nsid, lUInt16 id )
-    {
-        if (index>(lUInt32)_children.length())
-            index = _children.length();
-        ldomElement * elem = new ldomElement( _document, this, _level+1, index, nsid, id );
-        _children.insert( index, elem );
-#if (LDOM_ALLOW_NODE_INDEX==1)
-        // reindex tail
-        for (int i=index; i<_children.length(); i++)
-            _children[i]->setIndex( i );
-#endif
-        return elem;
-    }
-    /// inserts child element
-    ldomElement * insertChildElement( lUInt16 id )
-    {
-        ldomElement * elem = new ldomElement( _document, this, _level+1, _children.length(), LXML_NS_NONE, id );
-        _children.add( elem );
-        return elem;
-    }
-#if COMPACT_DOM == 1
-    /// inserts text as reference to document file
-    ldomTextRef * insertChildText( lUInt32 index, lvpos_t fpos, lvsize_t fsize, lUInt32 flags )
-    {
-        if (index>(lUInt32)_children.length())
-            index = _children.length();
-        ldomTextRef * text = new ldomTextRef( this, _level+1, index, (lUInt32)fpos, (lUInt32)fsize, (lUInt16)flags );
-        _children.insert( index, text );
-#if (LDOM_ALLOW_NODE_INDEX==1)
-        // reindex tail
-        for (int i=index; i<_children.length(); i++)
-            _children[i]->setIndex( i );
-#endif
-        return text;
-    }
-    /// inserts text as reference to document file
-    ldomTextRef * insertChildText( lvpos_t fpos, lvsize_t fsize, lUInt32 flags )
-    {
-        ldomTextRef * text = new ldomTextRef( this, _level+1, (lUInt16)_children.length(), (lUInt32)fpos, (lUInt32)fsize, (lUInt16)flags );
-        _children.add( text );
-        return text;
-    }
-#endif
-    /// inserts child text
-    ldomText * insertChildText( lUInt32 index, lString16 value )
-    {
-        if (index>(lUInt32)_children.length())
-            index = _children.length();
-        ldomText * text = new ldomText( this, _level+1, index, value );
-        _children.insert( index, text );
-#if (LDOM_ALLOW_NODE_INDEX==1)
-        // reindex tail
-        for (int i=index; i<_children.length(); i++)
-            _children[i]->setIndex( i );
-#endif
-        return text;
-    }
-    /// inserts child text
-    ldomText * insertChildText( lString16 value )
-    {
-        ldomText * text = new ldomText( this, _level+1, _children.length(), value );
-        _children.add( text );
-        return text;
-    }
-    ldomNode * removeChild( lUInt32 index )
-    {
-        if ( index>(lUInt32)_children.length() )
-            return NULL;
-        ldomNode * node = _children.remove(index);
-#if (LDOM_ALLOW_NODE_INDEX==1)
-        for (int i=index; i<_children.length(); i++)
-            _children[i]->setIndex( i );
-#endif
-        return node;
-    }
-    /// calls specified function recursively for all elements of DOM tree
-    virtual void recurseElements( void (*pFun)( ldomNode * node ) )
-    {
-        pFun( this );
-        int cnt = getChildCount();
-        for (int i=0; i<cnt; i++)
-        {
-            ldomNode * child = getChildNode( i );
-            if ( child->getNodeType()==LXML_ELEMENT_NODE )
-            {
-                child->recurseElements( pFun );
-            }
-        }
-    }
-    /// calls specified function recursively for all nodes of DOM tree
-    virtual void recurseNodes( void (*pFun)( ldomNode * node ) )
-    {
-        pFun( this );
-        if ( getNodeType()==LXML_ELEMENT_NODE )
-        {
-            int cnt = getChildCount();
-            for (int i=0; i<cnt; i++)
-            {
-                ldomNode * child = getChildNode( i );
-                child->recurseNodes( pFun );
-            }
-        }
-    }
-    /// creates stream to read base64 encoded data from element
-    LVStreamRef createBase64Stream();
-#if BUILD_LITE!=1
-    /// returns object image source
-    LVImageSourceRef getObjectImageSource();
-    /// formats final block
-    int renderFinalBlock(  LFormattedTextRef & frmtext, int width );
-#endif
-};
 
 class ldomDocumentWriter;
 
@@ -1501,17 +1356,16 @@ class ldomElementWriter
     ldomElementWriter * _parent;
     ldomDocument * _document;
 
-    ldomElement * _element;
-    const elem_def_t * _typeDef;
+    ldomNode * _element;
+    const css_elem_def_props_t * _typeDef;
     bool _allowText;
     lUInt32 getFlags();
     ldomElementWriter(ldomDocument * document, lUInt16 nsid, lUInt16 id, ldomElementWriter * parent);
-    ldomElement * getElement()
+    ldomNode * getElement()
     {
         return _element;
     }
-    void onText( const lChar16 * text, int len,
-        lvpos_t fpos, lvsize_t fsize, lUInt32 flags );
+    void onText( const lChar16 * text, int len, lUInt32 flags );
     void addAttribute( lUInt16 nsid, lUInt16 id, const wchar_t * value );
     //lxmlElementWriter * pop( lUInt16 id );
 
@@ -1540,7 +1394,7 @@ protected:
     lUInt16 _stopTagId;
     //============================
     lUInt32 _flags;
-    virtual void ElementCloseHandler( ldomElement * elem ) { }
+    virtual void ElementCloseHandler( ldomNode * ) { }
 public:
     /// returns flags
     virtual lUInt32 getFlags() { return _flags; }
@@ -1554,7 +1408,7 @@ public:
     /// called on parsing end
     virtual void OnStop();
     /// called on opening tag
-    virtual ldomElement * OnTagOpen( const lChar16 * nsname, const lChar16 * tagname );
+    virtual ldomNode * OnTagOpen( const lChar16 * nsname, const lChar16 * tagname );
     /// called on closing tag
     virtual void OnTagClose( const lChar16 * nsname, const lChar16 * tagname );
     /// called on attribute
@@ -1562,8 +1416,7 @@ public:
     /// close tags
     ldomElementWriter * pop( ldomElementWriter * obj, lUInt16 id );
     /// called on text
-    virtual void OnText( const lChar16 * text, int len,
-        lvpos_t fpos, lvsize_t fsize, lUInt32 flags );
+    virtual void OnText( const lChar16 * text, int len, lUInt32 flags );
     /// constructor
     ldomDocumentWriter(ldomDocument * document, bool headerOnly=false );
     /// destructor
@@ -1585,17 +1438,16 @@ protected:
     bool _libRuParagraphStart;
     lUInt16 * _rules[MAX_ELEMENT_TYPE_ID];
     virtual void AutoClose( lUInt16 tag_id, bool open );
-    virtual void ElementCloseHandler( ldomElement * elem );
+    virtual void ElementCloseHandler( ldomNode * elem );
 public:
     /// called on attribute
     virtual void OnAttribute( const lChar16 * nsname, const lChar16 * attrname, const lChar16 * attrvalue );
     /// called on opening tag
-    virtual ldomElement * OnTagOpen( const lChar16 * nsname, const lChar16 * tagname );
+    virtual ldomNode * OnTagOpen( const lChar16 * nsname, const lChar16 * tagname );
     /// called on closing tag
     virtual void OnTagClose( const lChar16 * nsname, const lChar16 * tagname );
     /// called on text
-    virtual void OnText( const lChar16 * text, int len,
-        lvpos_t fpos, lvsize_t fsize, lUInt32 flags );
+    virtual void OnText( const lChar16 * text, int len, lUInt32 flags );
     /// constructor
     ldomDocumentWriterFilter(ldomDocument * document, bool headerOnly, const char *** rules);
     /// destructor
@@ -1619,7 +1471,7 @@ public:
     virtual void OnEncoding( const lChar16 * name, const lChar16 * table )
     { parent->OnEncoding( name, table ); }
     /// called on parsing start
-    virtual void OnStart(LVFileFormatParser * parser)
+    virtual void OnStart(LVFileFormatParser *)
     {
         insideTag = false;
     }
@@ -1629,9 +1481,9 @@ public:
         insideTag = false;
     }
     /// called on opening tag
-    virtual ldomElement * OnTagOpen( const lChar16 * nsname, const lChar16 * tagname )
+    virtual ldomNode * OnTagOpen( const lChar16 * nsname, const lChar16 * tagname )
     {
-        ldomElement * res = NULL;
+        ldomNode * res = NULL;
         if ( insideTag ) {
             res = parent->OnTagOpen(nsname, tagname);
         }
@@ -1654,11 +1506,10 @@ public:
             parent->OnAttribute(nsname, attrname, attrvalue);
     }
     /// called on text
-    virtual void OnText( const lChar16 * text, int len,
-        lvpos_t fpos, lvsize_t fsize, lUInt32 flags )
+    virtual void OnText( const lChar16 * text, int len, lUInt32 flags )
     {
         if ( insideTag )
-            parent->OnText( text, len, 0, 0, flags );
+            parent->OnText( text, len, flags );
     }
     /// constructor
     ldomDocumentFragmentWriter( LVXMLParserCallback * parentWriter, lString16 baseTagName )
@@ -1677,9 +1528,27 @@ lString16 extractDocSeries( ldomDocument * doc );
 bool IsEmptySpace( const lChar16 * text, int len );
 
 /// parse XML document from stream, returns NULL if failed
-ldomDocument * LVParseXMLStream( LVStreamRef stream, 
-                              const elem_def_t * elem_table=NULL, 
-                              const attr_def_t * attr_table=NULL, 
+ldomDocument * LVParseXMLStream( LVStreamRef stream,
+                              const elem_def_t * elem_table=NULL,
+                              const attr_def_t * attr_table=NULL,
                               const ns_def_t * ns_table=NULL );
+
+/// document cache
+class ldomDocCache
+{
+public:
+    /// open existing cache file stream
+    static LVStreamRef openExisting( lString16 filename, lUInt32 crc, lUInt32 docFlags );
+    /// create new cache file
+    static LVStreamRef createNew( lString16 filename, lUInt32 crc, lUInt32 docFlags, lUInt32 fileSize );
+    /// init document cache
+    static bool init( lString16 cacheDir, lvsize_t maxSize );
+    /// close document cache manager
+    static bool close();
+    /// delete all cache files
+    static bool clear();
+    /// returns true if cache is enabled (successfully initialized)
+    static bool enabled();
+};
 
 #endif

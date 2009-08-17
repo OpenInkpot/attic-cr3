@@ -34,7 +34,7 @@ lString16 CRSkinContainer::getBasePath( const lChar16 * path )
     ldomXPointer p = getXPointer( lString16( path ) );
     if ( !p )
         return res;
-    if ( p.getNode()->getNodeType() != LXML_ELEMENT_NODE )
+    if ( !p.getNode()->isElement() )
         return res;
     lString16 value = p.getNode()->getAttributeValue( L"base" );
     if ( value.empty() || value[0]!=L'#' )
@@ -279,7 +279,7 @@ lString16 CRSkinContainer::readString( const lChar16 * path, const lChar16 * att
     ldomXPointer ptr = getXPointer( path );
     if ( !ptr )
         return lString16();
-    if ( ptr.getNode()->getNodeType() != LXML_ELEMENT_NODE )
+    if ( !ptr.getNode()->isElement() )
         return lString16();
 	//lString16 pnname = ptr.getNode()->getParentNode()->getNodeName();
 	//lString16 nname = ptr.getNode()->getNodeName();
@@ -761,7 +761,7 @@ CRMenuSkin::CRMenuSkin()
 class CRSimpleWindowSkin : public CRWindowSkin
 {
 public:
-	CRSimpleWindowSkin( CRSkinImpl * skin )
+        CRSimpleWindowSkin( CRSkinImpl * )
 	{
 		setBackgroundColor( 0xAAAAAA );
 	}
@@ -770,7 +770,7 @@ public:
 class CRSimpleFrameSkin : public CRRectSkin
 {
 public:
-	CRSimpleFrameSkin( CRSkinImpl * skin )
+        CRSimpleFrameSkin( CRSkinImpl * )
 	{
 		setBackgroundColor( 0xAAAAAA );
 	}
@@ -1070,7 +1070,7 @@ bool CRSkinContainer::readMenuSkin(  const lChar16 * path, CRMenuSkin * res )
 
 lString16 CRSkinImpl::pathById( const lChar16 * id )
 {
-    ldomElement * elem = _doc->getElementById( id );
+    ldomNode * elem = _doc->getElementById( id );
     if ( !elem )
         return lString16();
     return ldomXPointer(elem, -1).toString();

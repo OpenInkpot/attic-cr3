@@ -16,7 +16,7 @@
 
 
 #define BUF_SIZE_INCREMENT 4096
-#define MIN_BUF_DATA_SIZE 2048
+#define MIN_BUF_DATA_SIZE 4096
 #define CP_AUTODETECT_BUF_SIZE 0x10000
 
 
@@ -57,7 +57,9 @@ LVTextFileBase::LVTextFileBase( LVStreamRef stream )
     : LVFileParserBase(stream)
     , m_enc_type( ce_8bit_cp )
     , m_conv_table(NULL)
+    , m_eof(false)
 {
+    clearCharBuffer();
 }
 
 
@@ -95,7 +97,7 @@ static int charToHex( lUInt8 ch )
 
 
 /// reads one character from buffer in RTF format
-lChar16 LVTextFileBase::ReadRtfChar( int enc_type, const lChar16 * conv_table )
+lChar16 LVTextFileBase::ReadRtfChar( int, const lChar16 * conv_table )
 {
     lChar16 ch = m_buf[m_buf_pos++];
     lChar16 ch2 = m_buf[m_buf_pos];
@@ -125,6 +127,7 @@ lChar16 LVTextFileBase::ReadRtfChar( int enc_type, const lChar16 * conv_table )
     return ' ';
 }
 
+#if 0
 lChar16 LVTextFileBase::ReadChar()
 {
     lUInt16 ch = m_buf[m_buf_pos++];
@@ -182,6 +185,137 @@ lChar16 LVTextFileBase::ReadChar()
         return 0;
     }
 }
+#endif
+
+void LVTextFileBase::checkEof()
+{
+    if ( m_buf_fpos+m_buf_len < this->m_stream_size )
+        m_buf_pos--;
+    else
+        m_buf_pos = m_buf_len = m_stream_size - (m_buf_fpos+m_buf_len);
+}
+
+
+/// reads several characters from buffer
+int LVTextFileBase::ReadChars( lChar16 * buf, int maxsize )
+{
+    if ( m_buf_pos>=m_buf_len )
+        return 0;
+    int count = 0;
+    switch ( m_enc_type ) {
+    case ce_8bit_cp:
+    case ce_utf8:
+        if ( m_conv_table!=NULL ) {
+            for ( ; count<maxsize && m_buf_pos<m_buf_len; count++ ) {
+                lUInt16 ch = m_buf[m_buf_pos++];
+                buf[count] = ( (ch & 0x80) == 0 ) ? ch : m_conv_table[ch&0x7F];
+            }
+            return count;
+        } else  {
+            for ( ; count<maxsize; count++ ) {
+                lUInt16 ch = m_buf[m_buf_pos++];
+                // support only 11 and 16 bit UTF8 chars
+                if ( (ch & 0x80) == 0 ) {
+                    buf[count] = ch;
+                    if ( m_buf_pos>=m_buf_len )
+                        return count + 1;
+                } else if ( (ch & 0xE0) == 0xC0 ) {
+                    // 11 bits
+                    if ( m_buf_pos+1>=m_buf_len ) {
+                        checkEof();
+                        return count;
+                    }
+                    ch = (ch&0x1F);
+                    lUInt16 ch2 = m_buf[m_buf_pos++]&0x3F;
+                    buf[count] = (ch<<6) | ch2;
+                    //buf[count] = ((lUInt16)(ch&0x1F)<<6) | ((lUInt16)m_buf[m_buf_pos++]&0x3F);
+                } else if ( (ch & 0xF0) == 0xE0 ) {
+                    // 16 bits
+                    if ( m_buf_pos+2>=m_buf_len ) {
+                        checkEof();
+                        return count;
+                    }
+                    ch = (ch&0x0F);
+                    lUInt16 ch2 = m_buf[m_buf_pos++]&0x3F;
+                    lUInt16 ch3 = m_buf[m_buf_pos++]&0x3F;
+                    buf[count] = (ch<<12) | (ch2<<6) | ch3;
+                } else {
+                    // 20 bits
+                    if ( m_buf_pos+3>=m_buf_len ) {
+                        checkEof();
+                        return count;
+                    }
+                    ch = (ch&0x07);
+                    lUInt16 ch2 = m_buf[m_buf_pos++]&0x3F;
+                    lUInt16 ch3 = m_buf[m_buf_pos++]&0x3F;
+                    lUInt16 ch4 = m_buf[m_buf_pos++]&0x3F;
+                    buf[count] = ((lChar16)ch<<18) | (ch2<12) | (ch3<<6) | ch4;
+                }
+            }
+            return count;
+        }
+    case ce_utf16_be:
+        {
+            for ( ; count<maxsize; count++ ) {
+                if ( m_buf_pos+1>=m_buf_len ) {
+                    checkEof();
+                    return count;
+                }
+                lUInt16 ch = m_buf[m_buf_pos++];
+                lUInt16 ch2 = m_buf[m_buf_pos++];
+                buf[count] = (ch << 8) | ch2;
+            }
+            return count;
+        }
+    case ce_utf16_le:
+        {
+            for ( ; count<maxsize; count++ ) {
+                if ( m_buf_pos+1>=m_buf_len ) {
+                    checkEof();
+                    return count;
+                }
+                lUInt16 ch = m_buf[m_buf_pos++];
+                lUInt16 ch2 = m_buf[m_buf_pos++];
+                buf[count] = (ch2 << 8) | ch;
+            }
+            return count;
+        }
+    case ce_utf32_be:
+        // support 24 bits only
+        {
+            for ( ; count<maxsize; count++ ) {
+                if ( m_buf_pos+3>=m_buf_len ) {
+                    checkEof();
+                    return count;
+                }
+                m_buf_pos++; //lUInt16 ch = m_buf[m_buf_pos++];
+                lUInt16 ch2 = m_buf[m_buf_pos++];
+                lUInt16 ch3 = m_buf[m_buf_pos++];
+                lUInt16 ch4 = m_buf[m_buf_pos++];
+                buf[count] = (ch2 << 16) | (ch3 << 8) | ch4;
+            }
+            return count;
+        }
+    case ce_utf32_le:
+        // support 24 bits only
+        {
+            for ( ; count<maxsize; count++ ) {
+                if ( m_buf_pos+3>=m_buf_len ) {
+                    checkEof();
+                    return count;
+                }
+                lUInt16 ch = m_buf[m_buf_pos++];
+                lUInt16 ch2 = m_buf[m_buf_pos++];
+                lUInt16 ch3 = m_buf[m_buf_pos++];
+                m_buf_pos++; //lUInt16 ch4 = m_buf[m_buf_pos++];
+                buf[count] = (ch3 << 16) | (ch2 << 8) | ch;
+            }
+            return count;
+        }
+    default:
+        return 0;
+    }
+}
 
 /// tries to autodetect text encoding
 bool LVTextFileBase::AutodetectEncoding()
@@ -221,7 +355,7 @@ bool LVFileParserBase::Seek( lvpos_t pos, int bytesToPrefetch )
         m_buf_pos = (pos - m_buf_fpos);
         return true;
     }
-    if ( pos<0 || pos>=m_stream_size )
+    if ( pos>=m_stream_size )
         return false;
     unsigned bytesToRead = (bytesToPrefetch > m_buf_size) ? bytesToPrefetch : m_buf_size;
     if ( bytesToRead < BUF_SIZE_INCREMENT )
@@ -230,7 +364,7 @@ bool LVFileParserBase::Seek( lvpos_t pos, int bytesToPrefetch )
         bytesToRead = (m_stream_size - pos);
     if ( (unsigned)m_buf_size < bytesToRead ) {
         m_buf_size = bytesToRead;
-        m_buf = (lUInt8 *)realloc( m_buf, m_buf_size + 16 );
+        m_buf = (lUInt8 *)realloc( m_buf, m_buf_size );
     }
     m_buf_fpos = pos;
     m_buf_pos = 0;
@@ -278,45 +412,7 @@ int LVTextFileBase::ReadTextBytes( lvpos_t pos, int bytesToRead, lChar16 * buf, 
             chcount++;
         }
     } else {
-        while ( m_buf_pos<max_pos && chcount < buf_size ) {
-            *buf++ = ReadChar();
-            chcount++;
-        }
-    }
-    return chcount;
-}
-
-/// reads specified number of characters and saves to buffer
-int LVTextFileBase::ReadTextChars( lvpos_t pos, int charsToRead, lChar16 * buf, int buf_size, int flags)
-{
-    if ( !Seek( pos, charsToRead*4 ) )
-        return 0;
-    int chcount = 0;
-    if ( buf_size > charsToRead )
-        buf_size = charsToRead;
-    if ( (flags & TXTFLG_RTF)!=0 ) {
-        char_encoding_type enc_type = ce_utf8;
-        lChar16 * conv_table = NULL;
-        if ( flags & TXTFLG_ENCODING_MASK ) {
-        // set new encoding
-            int enc_id = (flags & TXTFLG_ENCODING_MASK) >> TXTFLG_ENCODING_SHIFT;
-            if ( enc_id >= ce_8bit_cp ) {
-                conv_table = (lChar16 *)GetCharsetByte2UnicodeTableById( enc_id );
-                enc_type = ce_8bit_cp;
-            } else {
-                conv_table = NULL;
-                enc_type = (char_encoding_type)enc_id;
-            }
-        }
-        while ( m_buf_pos<m_buf_len && chcount < buf_size ) {
-            *buf++ = ReadRtfChar(enc_type, conv_table);
-            chcount++;
-        }
-    } else {
-        while ( m_buf_pos<m_buf_len && chcount < buf_size ) {
-            *buf++ = ReadChar();
-            chcount++;
-        }
+        return ReadChars( buf, buf_size );
     }
     return chcount;
 }
@@ -347,7 +443,7 @@ bool LVFileParserBase::FillBuffer( int bytesToRead )
         if (space < bytesToRead)
         {
             m_buf_size = m_buf_size + (bytesToRead - space + BUF_SIZE_INCREMENT);
-            m_buf = (lUInt8 *)realloc( m_buf, m_buf_size + 16 );
+            m_buf = (lUInt8 *)realloc( m_buf, m_buf_size );
         }
     }
     lvsize_t n = 0;
@@ -364,6 +460,12 @@ void LVFileParserBase::Reset()
     m_buf_pos = 0;
     m_buf_len = 0;
     m_stream_size = m_stream->GetSize();
+}
+
+void LVTextFileBase::Reset()
+{
+    LVFileParserBase::Reset();
+    clearCharBuffer();
 }
 
 void LVTextFileBase::SetCharset( const lChar16 * name )
@@ -482,8 +584,8 @@ int DetectHeadingLevelByText( const lString16 & str )
     }
     if ( ch=='I' || ch=='V' || ch=='X' ) {
         // TODO: optimize
-        static const char * romeNumbers[] = { "I", "II", "III", "IV", "V", "VI", "VII", "VIII", "IX", "X", "XI", "XII", "XIII", "XIV", "XV", "XVI", "XVII", "XVIII", "XIX", 
-            "XX", "XXI", "XXII", "XXIII", "XXIV", "XXV", "XXVI", "XXVII", "XXVIII", "XXIX", 
+        static const char * romeNumbers[] = { "I", "II", "III", "IV", "V", "VI", "VII", "VIII", "IX", "X", "XI", "XII", "XIII", "XIV", "XV", "XVI", "XVII", "XVIII", "XIX",
+            "XX", "XXI", "XXII", "XXIII", "XXIV", "XXV", "XXVI", "XXVII", "XXVIII", "XXIX",
             "XXX", "XXXI", "XXXII", "XXXIII", "XXXIV", "XXXV", "XXXVI", "XXXVII", "XXXVIII", "XXXIX", NULL };
         int i=0;
         for ( i=0; romeNumbers[i]; i++ ) {
@@ -510,8 +612,8 @@ typedef enum {
 class LVTextFileLine
 {
 public:
-    lvpos_t fpos;   // position of line in file
-    lvsize_t fsize;  // size of data in file
+    //lvpos_t fpos;   // position of line in file
+    //lvsize_t fsize;  // size of data in file
     lUInt32 flags;  // flags. 1=eoln
     lString16 text; // line text
     lUInt16 lpos;   // left non-space char position
@@ -522,7 +624,7 @@ public:
     LVTextFileLine( LVTextFileBase * file, int maxsize )
     : flags(0), lpos(0), rpos(0), align(la_unknown)
     {
-        text = file->ReadLine( maxsize, fpos, fsize, flags );
+        text = file->ReadLine( maxsize, flags );
         //CRLog::debug("  line read: %s", UnicodeToUtf8(text).c_str() );
         if ( !text.empty() ) {
             const lChar16 * s = text.c_str();
@@ -658,8 +760,8 @@ public:
                 return la_right;
             if ( line->lpos==max_left_second_stats_pos )
                 return la_indent;
-            if ( line->lpos > max_left_second_stats_pos && 
-                    absCompare( center_dist, left_dist )<0 
+            if ( line->lpos > max_left_second_stats_pos &&
+                    absCompare( center_dist, left_dist )<0
                     && absCompare( center_dist, right_dist )<0 )
                 return la_centered;
             if ( absCompare( right_dist, left_dist )<0 )
@@ -718,7 +820,7 @@ public:
                 avg_right += line->rpos;
             }
         }
-           
+
         // pos stats
         int max_left_stats = 0;
         max_left_stats_pos = 0;
@@ -750,9 +852,9 @@ public:
         avg_right /= length();
         avg_center = (avg_left + avg_right) / 2;
 
-        int best_left_align_percent = max_left_stats * 100 / length();
+        //int best_left_align_percent = max_left_stats * 100 / length();
         int best_right_align_percent = max_right_stats * 100 / length();
-        int best_left_second_align_percent = max_left_second_stats * 100 / length();
+        //int best_left_second_align_percent = max_left_second_stats * 100 / length();
 
 
         for ( i=0; i<length(); i++ ) {
@@ -908,22 +1010,22 @@ public:
                 callback->OnTagOpen( NULL, L"author" );
                   callback->OnTagOpen( NULL, L"first-name" );
                     if ( !firstName.empty() )
-                        callback->OnText( firstName.c_str(), firstName.length(), 0, 0, TXTFLG_TRIM|TXTFLG_TRIM_REMOVE_EOL_HYPHENS );
+                        callback->OnText( firstName.c_str(), firstName.length(), TXTFLG_TRIM|TXTFLG_TRIM_REMOVE_EOL_HYPHENS );
                   callback->OnTagClose( NULL, L"first-name" );
                   callback->OnTagOpen( NULL, L"middle-name" );
                     if ( !middleName.empty() )
-                        callback->OnText( middleName.c_str(), middleName.length(), 0, 0, TXTFLG_TRIM|TXTFLG_TRIM_REMOVE_EOL_HYPHENS );
+                        callback->OnText( middleName.c_str(), middleName.length(), TXTFLG_TRIM|TXTFLG_TRIM_REMOVE_EOL_HYPHENS );
                   callback->OnTagClose( NULL, L"middle-name" );
                   callback->OnTagOpen( NULL, L"last-name" );
                     if ( !lastName.empty() )
-                        callback->OnText( lastName.c_str(), lastName.length(), 0, 0, TXTFLG_TRIM|TXTFLG_TRIM_REMOVE_EOL_HYPHENS );
+                        callback->OnText( lastName.c_str(), lastName.length(), TXTFLG_TRIM|TXTFLG_TRIM_REMOVE_EOL_HYPHENS );
                   callback->OnTagClose( NULL, L"last-name" );
                 callback->OnTagClose( NULL, L"author" );
             }
         }
         callback->OnTagOpen( NULL, L"book-title" );
             if ( !bookTitle.empty() )
-                callback->OnText( bookTitle.c_str(), bookTitle.length(), 0, 0, 0 );
+                callback->OnText( bookTitle.c_str(), bookTitle.length(), 0 );
         callback->OnTagClose( NULL, L"book-title" );
         if ( !seriesName.empty() || !seriesNumber.empty() ) {
             callback->OnTagOpen( NULL, L"sequence" );
@@ -948,14 +1050,15 @@ public:
     /// add one paragraph
     void AddPara( int startline, int endline, LVXMLParserCallback * callback )
     {
+        // TODO: remove pos, sz tracking
         lString16 str;
-        lvpos_t pos = 0;
-        lvsize_t sz = 0;
+        //lvpos_t pos = 0;
+        //lvsize_t sz = 0;
         for ( int i=startline; i<=endline; i++ ) {
             LVTextFileLine * item = get(i);
-            if ( i==startline )
-                pos = item->fpos;
-            sz = (item->fpos + item->fsize) - pos;
+            //if ( i==startline )
+            //    pos = item->fpos;
+            //sz = (item->fpos + item->fsize) - pos;
             str += item->text + L"\n";
         }
         bool singleLineFollowedByEmpty = false;
@@ -998,8 +1101,7 @@ public:
             } else
                     lastParaWasTitle = false;
             callback->OnTagOpen( NULL, L"p" );
-               callback->OnText( str.c_str(), str.length(), pos, sz,
-                   TXTFLG_TRIM | TXTFLG_TRIM_REMOVE_EOL_HYPHENS );
+               callback->OnText( str.c_str(), str.length(), TXTFLG_TRIM | TXTFLG_TRIM_REMOVE_EOL_HYPHENS );
             callback->OnTagClose( NULL, L"p" );
             if ( isHeader ) {
                 callback->OnTagClose( NULL, title_tag );
@@ -1126,8 +1228,7 @@ public:
                 LVTextFileLine * item = get(i);
                 if ( item->rpos > item->lpos ) {
                     callback->OnTagOpen( NULL, L"pre" );
-                       callback->OnText( item->text.c_str(), item->text.length(), item->fpos, item->fsize,
-                           item->flags );
+                       callback->OnText( item->text.c_str(), item->text.length(), item->flags );
                     callback->OnTagClose( NULL, L"pre" );
                 } else {
                     callback->OnTagOpen( NULL, L"empty-line" );
@@ -1155,64 +1256,42 @@ public:
 };
 
 /// reads next text line, tells file position and size of line, sets EOL flag
-lString16 LVTextFileBase::ReadLine( int maxLineSize, lvpos_t & fpos, lvsize_t & fsize, lUInt32 & flags )
+lString16 LVTextFileBase::ReadLine( int maxLineSize, lUInt32 & flags )
 {
-    fpos = m_buf_fpos + m_buf_pos;
-    fsize = 0;
+    //fsize = 0;
     flags = 0;
 
     lString16 res;
     res.reserve( 80 );
-    FillBuffer( maxLineSize*3 );
+    //FillBuffer( maxLineSize*3 );
 
-    lvpos_t last_space_fpos = 0;
-    int last_space_chpos = -1;
     lChar16 ch = 0;
-    while ( res.length()<(unsigned)maxLineSize ) {
-        if ( Eof() ) {
+    while ( 1 ) {
+        if ( m_eof ) {
             // EOF: treat as EOLN
-            last_space_fpos = m_buf_fpos + m_buf_pos;
-            last_space_chpos = res.length();
             flags |= LINE_HAS_EOLN; // EOLN flag
             break;
         }
-        ch = ReadChar();
-        if ( ch==0xFEFF && fpos==0 && res.empty() ) {
-            fpos = m_buf_fpos + m_buf_pos;
-        } else if ( ch!='\r' && ch!='\n' ) {
+        ch = ReadCharFromBuffer();
+        //if ( ch==0xFEFF && fpos==0 && res.empty() ) {
+        //} else 
+        if ( ch!='\r' && ch!='\n' ) {
             res.append( 1, ch );
             if ( ch==' ' || ch=='\t' ) {
-                last_space_fpos = m_buf_fpos + m_buf_pos;
-                last_space_chpos = res.length();
+                if ( res.length()>=(unsigned)maxLineSize )
+                    break;
             }
         } else {
             // eoln
-            lvpos_t prev_pos = m_buf_pos;
-            last_space_fpos = m_buf_fpos + m_buf_pos;
-            last_space_chpos = res.length();
-            if ( !Eof() ) {
-                lChar16 ch2 = ReadChar();
+            if ( !m_eof ) {
+                lChar16 ch2 = PeekCharFromBuffer();
                 if ( ch2!=ch && (ch2=='\r' || ch2=='\n') ) {
-                    last_space_fpos = m_buf_fpos + m_buf_pos;
-                } else {
-                    m_buf_pos = prev_pos;
+                    ReadCharFromBuffer();
                 }
             }
-            flags |= 1; // EOLN flag
+            flags |= LINE_HAS_EOLN; // EOLN flag
             break;
         }
-    }
-    // now if flags==0, maximum line len reached
-    if ( !flags && last_space_chpos == -1 ) {
-        // long line w/o spaces
-        last_space_fpos = m_buf_fpos + m_buf_pos;
-        last_space_chpos = res.length();
-    }
-
-    m_buf_pos = (last_space_fpos - m_buf_fpos); // rollback to end of line
-    fsize = last_space_fpos - fpos; // length in bytes
-    if ( (unsigned)last_space_chpos>res.length() ) {
-        res.erase( last_space_chpos, res.length()-last_space_chpos );
     }
 
     if ( !res.empty() ) {
@@ -1507,6 +1586,8 @@ bool LVXMLParser::CheckFormat()
     //CRLog::trace("LVXMLParser::CheckFormat()");
     #define XML_PARSER_DETECT_SIZE 8192
     Reset();
+    AutodetectEncoding();
+    Reset();
     lChar16 * chbuf = new lChar16[XML_PARSER_DETECT_SIZE];
     FillBuffer( XML_PARSER_DETECT_SIZE );
     int charsDecoded = ReadTextBytes( 0, m_buf_len, chbuf, XML_PARSER_DETECT_SIZE-1, 0 );
@@ -1514,8 +1595,20 @@ bool LVXMLParser::CheckFormat()
     bool res = false;
     if ( charsDecoded > 30 ) {
         lString16 s( chbuf, charsDecoded );
-        if ( s.pos(L"<?xml") >=0 && s.pos(L"version=") >= 6 ) //&& s.pos(L"<FictionBook") >= 0
+        if ( s.pos(L"<?xml") >=0 && s.pos(L"version=") >= 6 ) {
+            //&& s.pos(L"<FictionBook") >= 0
             res = true;
+            int encpos=s.pos(L"encoding=\"");
+            if ( encpos>=0 ) {
+                lString16 encname = s.substr( encpos+10, 20 );
+                int endpos = s.pos(L"\"");
+                if ( endpos>0 ) {
+                    encname.erase( endpos, encname.length() - endpos );
+                    SetCharset( encname.c_str() );
+                }
+            } else {
+            }
+        }
         //else if ( s.pos(L"<html xmlns=\"http://www.w3.org/1999/xhtml\"") >= 0 )
         //    res = true;
     }
@@ -1540,27 +1633,20 @@ bool LVXMLParser::Parse()
     lString16 attrns;
     lString16 attrvalue;
     bool errorFlag = false;
-    for (;!Eof() && !errorFlag;)
+    for (;!m_eof && !errorFlag;)
     {
         if ( m_stopped )
              break;
         // load next portion of data if necessary
-        if ( m_buf_len - m_buf_pos < MIN_BUF_DATA_SIZE ) {
-            if ( !FillBuffer( MIN_BUF_DATA_SIZE*2 ) ) {
-                errorFlag = true;
-                break;
-            }
-        }
-        if ( m_buf_len - m_buf_pos <=0 )
-            break;
+        lChar16 ch = PeekCharFromBuffer();
         switch (m_state)
         {
         case ps_bof:
             {
                 // skip file beginning until '<'
-                for ( ; m_buf_pos<m_buf_len && m_buf[m_buf_pos]!='<'; m_buf_pos++ )
+                for ( ; !m_eof && ch!='<'; ch = PeekNextCharFromBuffer() )
                     ;
-                if (m_buf_pos<m_buf_len)
+                if (!m_eof)
                 {
                     // m_buf[m_buf_pos] == '<'
                     m_state = ps_lt;
@@ -1570,52 +1656,45 @@ bool LVXMLParser::Parse()
             break;
         case ps_lt:
             {
-                if (!SkipSpaces())
+                if ( !SkipSpaces() )
                     break;
                 closeFlag = false;
                 qFlag = false;
-                if (m_buf[m_buf_pos]=='/')
+                if (ch=='/')
                 {
-                    m_buf_pos++;
+                    ch = ReadCharFromBuffer();
                     closeFlag = true;
                 }
-                else if (m_buf[m_buf_pos]=='?')
+                else if (ch=='?')
                 {
                     // <?xml?>
-                    m_buf_pos++;
+                    ch = ReadCharFromBuffer();
                     qFlag = true;
                 }
-                else if (m_buf[m_buf_pos]=='!')
+                else if (ch=='!')
                 {
                     // comments etc...
-                    if ( m_buf[m_buf_pos+1]=='-' && m_buf[m_buf_pos+2]=='-' ) {
+                    if ( PeekCharFromBuffer(1)=='-' && PeekCharFromBuffer(2)=='-' ) {
                         // skip comments
-                        m_buf_pos += 3;
-                        while ( m_buf[m_buf_pos]!='-' || m_buf[m_buf_pos+1]!='-'
-                                || m_buf[m_buf_pos+2]!='>' ) {
-                            //
-                            if ( m_buf_len - m_buf_pos < MIN_BUF_DATA_SIZE ) {
-                                if ( !FillBuffer( MIN_BUF_DATA_SIZE*2 ) ) {
-                                    errorFlag = true;
-                                    break;
-                                }
-                            }
-                            m_buf_pos++;
+                        ch = PeekNextCharFromBuffer( 2 );
+                        while ( !m_eof && (ch!='-' || PeekCharFromBuffer(1)!='-'
+                                || PeekCharFromBuffer(2)!='>') ) {
+                            ch = PeekNextCharFromBuffer();
                         }
-                        if ( m_buf[m_buf_pos]=='-' && m_buf[m_buf_pos+1]=='-'
-                                && m_buf[m_buf_pos+2]=='>' )
-                                m_buf_pos += 3;
+                        if ( ch=='-' && PeekCharFromBuffer(1)=='-'
+                                && PeekCharFromBuffer(2)=='>' )
+                            ch = PeekNextCharFromBuffer(2);
                         m_state = ps_text;
                         break;
                     }
                 }
-                if (!ReadIdent(tagns, tagname) || m_buf[m_buf_pos]=='=')
+                if ( !ReadIdent(tagns, tagname) || PeekCharFromBuffer()=='=')
                 {
                     // error!
                     if (SkipTillChar('>'))
                     {
                         m_state = ps_text;
-                        ++m_buf_pos;
+                        ch = ReadCharFromBuffer();
                     }
                     break;
                 }
@@ -1626,7 +1705,7 @@ bool LVXMLParser::Parse()
                     if (SkipTillChar('>'))
                     {
                         m_state = ps_text;
-                        ++m_buf_pos;
+                        ch = ReadCharFromBuffer();
                     }
                     break;
                 }
@@ -1646,17 +1725,17 @@ bool LVXMLParser::Parse()
             {
                 if (!SkipSpaces())
                     break;
-                char ch = m_buf[m_buf_pos];
-                char nch = m_buf[m_buf_pos+1];
+                ch = PeekCharFromBuffer();
+                lChar16 nch = PeekCharFromBuffer(1);
                 if ( ch=='>' || (nch=='>' && (ch=='/' || ch=='?')) )
                 {
                     // end of tag
-                    if (ch!='>')
+                    if ( ch!='>' )
                         m_callback->OnTagClose(tagns.c_str(), tagname.c_str());
-                    if (ch=='>')
-                        m_buf_pos++;
+                    if ( ch=='>' )
+                        ch = PeekNextCharFromBuffer();
                     else
-                        m_buf_pos+=2;
+                        ch = PeekNextCharFromBuffer(1);
                     m_state = ps_text;
                     break;
                 }
@@ -1664,44 +1743,37 @@ bool LVXMLParser::Parse()
                 {
                     // error: skip rest of tag
                     SkipTillChar('<');
-                    m_buf_pos++;
+                    ch = PeekNextCharFromBuffer(1);
                     m_state = ps_lt;
                     break;
                 }
                 SkipSpaces();
                 attrvalue.reset(16);
-                if ( m_buf[m_buf_pos]=='=' )
+                ch = PeekCharFromBuffer();
+                if ( ch=='=' )
                 {
                     // read attribute value
-                    m_buf_pos++;
+                    ch = PeekNextCharFromBuffer();
                     SkipSpaces();
                     lChar16 qChar = 0;
-                    lChar16 ch = m_buf[m_buf_pos];
+                    ch = PeekCharFromBuffer();
                     if (ch=='\"' || ch=='\'')
                     {
-                        qChar = m_buf[m_buf_pos];
-                        m_buf_pos++;
+                        qChar = ReadCharFromBuffer();
                     }
-                    for ( ;!Eof(); )
+                    for ( ;!m_eof; )
                     {
-                        if ( m_buf_len - m_buf_pos < MIN_BUF_DATA_SIZE ) {
-                            if ( !FillBuffer( MIN_BUF_DATA_SIZE*2 ) ) {
-                                errorFlag = true;
-                                break;
-                            }
-
-                        }
-                        ch = m_buf[m_buf_pos];
+                        ch = PeekCharFromBuffer();
                         if (ch=='>')
                             break;
                         if (!qChar && IsSpaceChar(ch))
                             break;
                         if (qChar && ch==qChar)
                         {
-                            m_buf_pos++;
+                            ch = PeekNextCharFromBuffer();
                             break;
                         }
-                        ch = ReadChar();
+                        ch = ReadCharFromBuffer();
                         if (ch)
                             attrvalue += ch;
                         else
@@ -2079,7 +2151,7 @@ void PreProcessXmlString( lString16 & s, lUInt32 flags )
                     str[j++] = str[i];
                     state = 0;
                 }
-                
+
             } else if (ch == ';')
             {
                 if (nch)
@@ -2103,7 +2175,7 @@ void PreProcessXmlString( lString16 & s, lUInt32 flags )
     if ( tabCount > 0 ) {
         // expand tabs
         lString16 buf;
-        
+
         buf.reserve( j + tabCount * 8 );
         int x = 0;
         for ( int i=0; i<j; i++ ) {
@@ -2124,41 +2196,90 @@ void PreProcessXmlString( lString16 & s, lUInt32 flags )
     }
 }
 
+void LVTextFileBase::clearCharBuffer()
+{
+    m_read_buffer_len = m_read_buffer_pos = 0;
+}
+
+int LVTextFileBase::fillCharBuffer()
+{
+    int available = m_read_buffer_len - m_read_buffer_pos;
+    if ( available > (XML_CHAR_BUFFER_SIZE>>3) )
+        return available; // don't update if more than 1/8 of buffer filled
+    if ( m_buf_len - m_buf_pos < MIN_BUF_DATA_SIZE )
+        FillBuffer( MIN_BUF_DATA_SIZE*2 );
+    if ( m_read_buffer_len > (XML_CHAR_BUFFER_SIZE - (XML_CHAR_BUFFER_SIZE>>3)) ) {
+        memcpy( m_read_buffer, m_read_buffer+m_read_buffer_pos, available * sizeof(lChar16) );
+        m_read_buffer_pos = 0;
+        m_read_buffer_len = available;
+    }
+    int charsRead = ReadChars( m_read_buffer + m_read_buffer_len, XML_CHAR_BUFFER_SIZE - m_read_buffer_len );
+    m_read_buffer_len += charsRead;
+//#ifdef _DEBUG
+//    CRLog::trace("buf: %s\n", UnicodeToUtf8(lString16(m_read_buffer, m_read_buffer_len)).c_str() );
+//#endif
+    return m_read_buffer_len - m_read_buffer_pos;
+}
+
 bool LVXMLParser::ReadText()
 {
-    int text_start_pos = 0;
-    int ch_start_pos = 0;
-    int last_split_fpos = 0;
+    // TODO: remove tracking of file pos
+    //int text_start_pos = 0;
+    //int ch_start_pos = 0;
+    //int last_split_fpos = 0;
     int last_split_txtlen = 0;
     int tlen = 0;
-    text_start_pos = (int)(m_buf_fpos + m_buf_pos);
+    //text_start_pos = (int)(m_buf_fpos + m_buf_pos);
     m_txt_buf.reset(TEXT_SPLIT_SIZE+1);
     lUInt32 flags = m_callback->getFlags();
     bool pre_para_splitting = ( flags & TXTFLG_PRE_PARA_SPLITTING )!=0;
     bool last_eol = false;
-    for (;!Eof();)
-    {
-        if ( m_buf_len - m_buf_pos < MIN_BUF_DATA_SIZE )
-            FillBuffer( MIN_BUF_DATA_SIZE*2 );
-        ch_start_pos = (int)(m_buf_fpos + m_buf_pos);
-        lChar16 ch = ReadChar();
-        bool flgBreak = ch=='<' || Eof();
-        bool splitParas = false;
-        if (last_eol && pre_para_splitting && (ch==' ' || ch=='\t' || ch==160) )
-            splitParas = true;
 
-        if (!flgBreak && !splitParas)
-        {
-            m_txt_buf += ch;
-            tlen++;
+    bool flgBreak = false;
+    bool splitParas = false;
+    while ( !flgBreak ) {
+        int i=0;
+        if ( m_read_buffer_pos + 1 >= m_read_buffer_len ) {
+            if ( !fillCharBuffer() ) {
+                m_eof = true;
+                return false;
+            }
+        }
+        for ( ; m_read_buffer_pos+i<m_read_buffer_len; i++ ) {
+            lChar16 ch = m_read_buffer[m_read_buffer_pos + i];
+            lChar16 nextch = m_read_buffer_pos + i + 1 < m_read_buffer_len ? m_read_buffer[m_read_buffer_pos + i + 1] : 0;
+            flgBreak = ch=='<' || m_eof;
+            if ( flgBreak && !tlen ) {
+                m_read_buffer_pos++;
+                return false;
+            }
+            splitParas = false;
+            if (last_eol && pre_para_splitting && (ch==' ' || ch=='\t' || ch==160) )
+                splitParas = true;
+            if (!flgBreak && !splitParas)
+            {
+                tlen++;
+            }
+            if ( tlen > TEXT_SPLIT_SIZE || flgBreak || splitParas)
+            {
+                if ( last_split_txtlen==0 || flgBreak || splitParas )
+                    last_split_txtlen = tlen;
+                break;
+            }
+            else if (ch==' ' || (ch=='\r' && nextch!='\n')
+                || (ch=='\n' && nextch!='\r') )
+            {
+                //last_split_fpos = (int)(m_buf_fpos + m_buf_pos);
+                last_split_txtlen = tlen;
+            }
+            last_eol = (ch=='\r' || ch=='\n');
+        }
+        if ( i>0 ) {
+            m_txt_buf.append( m_read_buffer + m_read_buffer_pos, i );
+            m_read_buffer_pos += i;
         }
         if ( tlen > TEXT_SPLIT_SIZE || flgBreak || splitParas)
         {
-            if (last_split_fpos==0 || flgBreak || splitParas)
-            {
-                last_split_fpos = (int)((ch=='<')?ch_start_pos : m_buf_fpos + m_buf_pos);
-                last_split_txtlen = tlen;
-            }
             //=====================================================
             lString16 nextText = m_txt_buf.substr( last_split_txtlen );
             m_txt_buf.limit( last_split_txtlen );
@@ -2169,61 +2290,47 @@ bool LVXMLParser::ReadText()
                     (flags & TXTFLG_TRIM_ALLOW_END_SPACE)?true:false,
                     (flags & TXTFLG_TRIM_REMOVE_EOL_HYPHENS)?true:false );
             }
-            m_callback->OnText(m_txt_buf.c_str(), m_txt_buf.length(), text_start_pos, last_split_fpos-text_start_pos, flags );
+            m_callback->OnText(m_txt_buf.c_str(), m_txt_buf.length(), flags );
             //=====================================================
             if (flgBreak)
             {
-                //m_buf_pos++;
+                if ( m_read_buffer_pos < m_read_buffer_len )
+                    m_read_buffer_pos++;
                 break;
             }
             m_txt_buf = nextText;
             tlen = m_txt_buf.length();
-            text_start_pos = last_split_fpos; //m_buf_fpos + m_buf_pos;
-            last_split_fpos = 0;
+            //text_start_pos = last_split_fpos; //m_buf_fpos + m_buf_pos;
+            //last_split_fpos = 0;
             last_split_txtlen = 0;
         }
-        else if (ch==' ' || (ch=='\r' && m_buf[m_buf_pos]!='\n')
-            || (ch=='\n' && m_buf[m_buf_pos]!='\r') )
-        {
-            last_split_fpos = (int)(m_buf_fpos + m_buf_pos);
-            last_split_txtlen = tlen;
-        }
-        last_eol = (ch=='\r' || ch=='\n');
     }
+
+
     //if (!Eof())
     //    m_buf_pos++;
-    return (!Eof());
+    return (!m_eof);
 }
 
 bool LVXMLParser::SkipSpaces()
 {
-    while (!Eof())
-    {
-        for ( ; m_buf_pos<m_buf_len && IsSpaceChar(m_buf[m_buf_pos]); m_buf_pos++ )
-            ;
-        if ( m_buf_len - m_buf_pos < MIN_BUF_DATA_SIZE )
-            FillBuffer( MIN_BUF_DATA_SIZE*2 );
-        if (m_buf_pos<m_buf_len)
-            return true; // non-space found!
+    for ( lUInt16 ch = PeekCharFromBuffer(); !m_eof; ch = PeekNextCharFromBuffer() ) {
+        if ( !IsSpaceChar(ch) )
+            break; // char found!
     }
-    return false; // EOF
+    return (!m_eof);
 }
 
-bool LVXMLParser::SkipTillChar( char ch )
+bool LVXMLParser::SkipTillChar( lChar16 charToFind )
 {
-    while (!Eof())
-    {
-        for ( ; m_buf_pos<m_buf_len && m_buf[m_buf_pos]!=ch; m_buf_pos++ )
-            ;
-        if ( m_buf_len - m_buf_pos < MIN_BUF_DATA_SIZE )
-            FillBuffer( MIN_BUF_DATA_SIZE*2 );
-        if (m_buf[m_buf_pos]==ch)
+    for ( lUInt16 ch = PeekCharFromBuffer(); !m_eof; ch = PeekNextCharFromBuffer() ) {
+        if ( ch == charToFind )
             return true; // char found!
     }
     return false; // EOF
 }
 
-inline bool isValidIdentChar( char ch )
+inline bool isValidIdentChar( lChar16 ch )
 {
     return ( (ch>='a' && ch<='z')
           || (ch>='A' && ch<='Z')
@@ -2234,7 +2341,7 @@ inline bool isValidIdentChar( char ch )
           || (ch==':') );
 }
 
-inline bool isValidFirstIdentChar( char ch )
+inline bool isValidFirstIdentChar( lChar16 ch )
 {
     return ( (ch>='a' && ch<='z')
           || (ch>='A' && ch<='Z')
@@ -2248,37 +2355,29 @@ bool LVXMLParser::ReadIdent( lString16 & ns, lString16 & name )
     ns.reset(16);
     name.reset(16);
     // check first char
-    if (! isValidFirstIdentChar(m_buf[m_buf_pos]) )
+    lChar16 ch0 = PeekCharFromBuffer();
+    if ( !isValidFirstIdentChar(ch0) )
         return false;
-    name += (lChar16)m_buf[m_buf_pos++];
-    while (!Eof())
-    {
-        if ( m_buf_len - m_buf_pos < MIN_BUF_DATA_SIZE )
-            FillBuffer( MIN_BUF_DATA_SIZE*2 );
-        for ( ; m_buf_pos<m_buf_len; m_buf_pos++ )
+
+    name += ReadCharFromBuffer();
+
+    for ( lUInt16 ch = PeekCharFromBuffer(); !m_eof; ch = PeekNextCharFromBuffer() ) {
+        if ( !isValidIdentChar(ch) )
+            break;
+        if (ch == ':')
         {
-            lUInt8 ch = m_buf[m_buf_pos];
-            if (!isValidIdentChar(ch))
-                break;
-            if (ch == ':')
-            {
-                if ( ns.empty() )
-                    name.swap( ns ); // add namespace
-                else
-                    break; // error
-            }
+            if ( ns.empty() )
+                name.swap( ns ); // add namespace
             else
-            {
-                name += ch;
-            }
+                break; // error
         }
-        if (m_buf_pos<m_buf_len)
+        else
         {
-            char ch = m_buf[m_buf_pos];
-            return (!name.empty()) && (ch==' ' || ch=='/' || ch=='>' || ch=='?' || ch=='=');
+            name += ch;
         }
     }
-    return true; // EOF
+    lChar16 ch = PeekCharFromBuffer();
+    return (!name.empty()) && (ch==' ' || ch=='/' || ch=='>' || ch=='?' || ch=='=' || ch==0);
 }
 
 void LVXMLParser::SetSpaceMode( bool flgTrimSpaces )
@@ -2347,11 +2446,9 @@ lString16 LVReadTextFile( LVStreamRef stream )
     LVTextParser reader( stream, NULL, true );
     if ( !reader.AutodetectEncoding() )
         return buf;
-    lvpos_t fpos;
-    lvsize_t fsize;
     lUInt32 flags;
     while ( !reader.Eof() ) {
-        lString16 line = reader.ReadLine( 4096, fpos, fsize, flags );
+        lString16 line = reader.ReadLine( 4096, flags );
         if ( !buf.empty() )
             buf << L'\n';
         if ( !line.empty() ) {

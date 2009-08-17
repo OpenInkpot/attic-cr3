@@ -21,8 +21,9 @@ AC_ARG_WITH(jinke,AC_HELP_STRING([--with-jinke],[path to jinke SDK]),
         *) cpu_libdir="${host_cpu}";;
     esac
     JINKEPATH="$withval"
-    CPPFLAGS="-DLBOOK=1 ${CPPFLAGS} -I${JINKEPATH}/include"
-    LDFLAGS="${LDFLAGS} -L${JINKEPATH}/lib/${cpu_libdir}"
+    CPPFLAGS="-DLBOOK=1 ${CPPFLAGS} "
+    #-I${JINKEPATH}/thirdparty/include -I${JINKEPATH}/include"
+    #LDFLAGS="${LDFLAGS} -L${JINKEPATH}/thirdparty/lib/${cpu_libdir} "
     export CPPFLAGS
     export LDFLAGS
     export JINKEPATH
@@ -31,6 +32,16 @@ AC_ARG_WITH(jinke,AC_HELP_STRING([--with-jinke],[path to jinke SDK]),
 with_jinke=false
 ac_cv_use_jinke=none
 AC_DEFINE(CR_USE_XCB)
+])
+
+AC_ARG_WITH(jinke-app,AC_HELP_STRING([--with-jinke-app],[to build standalone viewer instead of plugin]),
+    [
+    ac_cv_use_jinke_app=$withval
+    with_jinke_app=true
+    AC_DEFINE(CR_USE_JINKE_VIEWER)
+],[
+    with_jinke_app=false
+    ac_cv_use_jinke_app=none
 ])
 
 localedir='${prefix}/share/locale'
@@ -49,9 +60,11 @@ AC_C_BIGENDIAN
 AC_C_CONST
 AM_PROG_LIBTOOL
 AM_GNU_GETTEXT([external])
-AM_GNU_GETTEXT_VERSION([0.17])
+#don't submit!
+AM_GNU_GETTEXT_VERSION([0.16])
 
 if test "${with_jinke}" == "false"; then
+if test "${with_jinke_app}" == "false"; then
     PKG_PROG_PKG_CONFIG
     #PKG_CHECK_MODULES(EWL, [ewl >= 0.5.2.042])
     PKG_CHECK_MODULES(XCB, [xcb >= 1.1])
@@ -61,6 +74,7 @@ if test "${with_jinke}" == "false"; then
     PKG_CHECK_MODULES(FREETYPE, [freetype2 >= 9.10])
     PKG_CHECK_MODULES(FONTCONFIG, [fontconfig >= 0.22])
     PKG_CHECK_MODULES(PNG, [libpng >= 1.2])
+fi
 fi
 
 SUBDIRS=""
@@ -95,7 +109,7 @@ AC_ARG_ENABLE(cite,
 dnl color backbuffer option
 AC_ARG_ENABLE(color-backbuffer,
    AC_HELP_STRING(
-      [enable color backbuffer (gray otherwise)]),
+      [--enable-color-backbuffer : enable color backbuffer (gray otherwise)]),
    [AC_DEFINE(COLOR_BACKBUFFER, 1, [Build with color backbuffer])],
    [AC_DEFINE(COLOR_BACKBUFFER, 0, [Build with gray backbuffer])]
 )
@@ -103,7 +117,7 @@ AC_ARG_ENABLE(color-backbuffer,
 dnl crengine memory manager option
 AC_ARG_ENABLE(crengine-memory-manager,
    AC_HELP_STRING(
-      [enable crengine internal memory manager]),
+      [--crengine-memory-manager : enable crengine internal memory manager]),
    [AC_DEFINE(LDOM_USE_OWN_MEM_MAN, 1, [Build with internal memory manager support])],
    [AC_DEFINE(LDOM_USE_OWN_MEM_MAN, 0, [Build without internal memory manager support])]
 )
@@ -114,6 +128,7 @@ AC_SUBST([CRENGINE_LIBS])
 AC_SUBST([SUBDIRS])
 
 AM_CONDITIONAL(WITH_JINKE,$with_jinke)
+AM_CONDITIONAL(WITH_JINKE_APP,$with_jinke_app)
 #AC_CONFIG_FILES([Makefile])
 
 AC_OUTPUT(Makefile src/Makefile po/Makefile.in)

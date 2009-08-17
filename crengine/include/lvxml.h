@@ -20,12 +20,14 @@
 #include "crtxtenc.h"
 #include "dtddef.h"
 
+#define XML_CHAR_BUFFER_SIZE 4096
 #define XML_FLAG_NO_SPACE_TEXT 1
 
 //class LVXMLParser;
 class LVFileFormatParser;
 
 class ldomElement;
+class ldomNode;
 
 /// XML parser callback interface
 class LVXMLParserCallback
@@ -36,22 +38,21 @@ public:
     /// returns flags
     virtual lUInt32 getFlags() { return 0; }
     /// sets flags
-    virtual void setFlags( lUInt32 flags ) { }
+    virtual void setFlags( lUInt32 ) { }
     /// called on document encoding definition
-    virtual void OnEncoding( const lChar16 * name, const lChar16 * table ) { }
+    virtual void OnEncoding( const lChar16 *, const lChar16 * ) { }
     /// called on parsing start
     virtual void OnStart(LVFileFormatParser * parser) { _parser = parser; }
     /// called on parsing end
     virtual void OnStop() = 0;
     /// called on opening tag
-    virtual ldomElement * OnTagOpen( const lChar16 * nsname, const lChar16 * tagname) = 0;
+    virtual ldomNode * OnTagOpen( const lChar16 * nsname, const lChar16 * tagname) = 0;
     /// called on closing
     virtual void OnTagClose( const lChar16 * nsname, const lChar16 * tagname ) = 0;
     /// called on element attribute
     virtual void OnAttribute( const lChar16 * nsname, const lChar16 * attrname, const lChar16 * attrvalue ) = 0;
     /// called on text
-    virtual void OnText( const lChar16 * text, int len,
-        lvpos_t fpos, lvsize_t fsize, lUInt32 flags ) = 0;
+    virtual void OnText( const lChar16 * text, int len, lUInt32 flags ) = 0;
     /// destructor
     virtual ~LVXMLParserCallback() {}
 };
@@ -94,7 +95,7 @@ public:
     /// returns 8-bit charset conversion table (128 items, for codes 128..255)
     virtual lChar16 * GetCharsetTable( ) = 0;
     /// changes space mode
-    virtual void SetSpaceMode( bool flgTrimSpaces ) { }
+    virtual void SetSpaceMode( bool ) { }
     /// returns space mode
     virtual bool GetSpaceMode() { return false; }
     /// virtual destructor
@@ -142,19 +143,93 @@ protected:
     lString16 m_lang_name;
     lChar16 * m_conv_table; // charset conversion table for 8-bit encodings
 
+    lChar16 m_read_buffer[XML_CHAR_BUFFER_SIZE];
+    int m_read_buffer_len;
+    int m_read_buffer_pos;
+    bool m_eof;
+
+    void checkEof();
+
+    inline lChar16 ReadCharFromBuffer()
+    {
+        if ( m_read_buffer_pos >= m_read_buffer_len ) {
+            if ( !fillCharBuffer() ) {
+                m_eof = true;
+                return 0;
+            }
+        }
+        return m_read_buffer[m_read_buffer_pos++];
+    }
+    inline lChar16 PeekCharFromBuffer()
+    {
+        if ( m_read_buffer_pos >= m_read_buffer_len ) {
+            if ( !fillCharBuffer() ) {
+                m_eof = true;
+                return 0;
+            }
+        }
+        return m_read_buffer[m_read_buffer_pos];
+    }
+    inline lChar16 PeekCharFromBuffer( int offset )
+    {
+        if ( m_read_buffer_pos + offset >= m_read_buffer_len ) {
+            if ( !fillCharBuffer() ) {
+                m_eof = true;
+                return 0;
+            }
+            if ( m_read_buffer_pos + offset >= m_read_buffer_len )
+                return 0;
+        }
+        return m_read_buffer[m_read_buffer_pos + offset];
+    }
+    // skip current char (was already peeked), peek next
+    inline lChar16 PeekNextCharFromBuffer()
+    {
+        if ( m_read_buffer_pos >= m_read_buffer_len ) {
+            if ( !fillCharBuffer() ) {
+                m_eof = true;
+                return 0;
+            }
+        }
+        return m_read_buffer[++m_read_buffer_pos];
+    }
+    // skip current char (was already peeked), peek next
+    inline lChar16 PeekNextCharFromBuffer( int offset )
+    {
+        if ( m_read_buffer_pos+offset >= m_read_buffer_len ) {
+            if ( !fillCharBuffer() ) {
+                m_eof = true;
+                return 0;
+            }
+            if ( m_read_buffer_pos + offset >= m_read_buffer_len )
+                return 0;
+        }
+        m_read_buffer_pos += offset + 1;
+        return m_read_buffer[m_read_buffer_pos];
+    }
+    void clearCharBuffer();
+    /// returns number of available characters in buffer
+    int fillCharBuffer();
+
     /// reads one character from buffer
-    lChar16 ReadChar();
+    //lChar16 ReadChar();
+    /// reads several characters from buffer
+    int ReadChars( lChar16 * buf, int maxsize );
     /// reads one character from buffer in RTF format
     lChar16 ReadRtfChar( int enc_type, const lChar16 * conv_table );
     /// reads specified number of bytes, converts to characters and saves to buffer, returns number of chars read
     int ReadTextBytes( lvpos_t pos, int bytesToRead, lChar16 * buf, int buf_size, int flags );
+#if 0
     /// reads specified number of characters and saves to buffer, returns number of chars read
     int ReadTextChars( lvpos_t pos, int charsToRead, lChar16 * buf, int buf_size, int flags );
+#endif
 public:
+    virtual void Reset();
     /// tries to autodetect text encoding
     bool AutodetectEncoding();
     /// reads next text line, tells file position and size of line, sets EOL flag
-    lString16 ReadLine( int maxLineSize, lvpos_t & fpos, lvsize_t & fsize, lUInt32 & flags );
+    lString16 ReadLine( int maxLineSize, lUInt32 & flags );
+    //lString16 ReadLine( int maxLineSize, lvpos_t & fpos, lvsize_t & fsize, lUInt32 & flags );
     /// returns name of character encoding
     lString16 GetEncodingName() { return m_encoding_name; }
     /// returns name of language
@@ -247,7 +322,7 @@ private:
     bool m_trimspaces;
     int  m_state;
     bool SkipSpaces();
-    bool SkipTillChar( char ch );
+    bool SkipTillChar( lChar16 ch );
     bool ReadIdent( lString16 & ns, lString16 & str );
     bool ReadText();
 public:

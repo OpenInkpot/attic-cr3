@@ -2,12 +2,25 @@
 
    CoolReader Engine
 
-   lvstream.h:  stream classes interface
+   lvstream.cpp:  stream classes implementation
 
-   (c) Vadim Lopatin, 2000-2006
+   (c) Vadim Lopatin, 2000-2009
    This source code is distributed under the terms of
    GNU General Public License
    See LICENSE file for details
+
+ * In addition, as a special exception, the copyright holders give
+ * permission to link the code of portions of this program with the
+ * UNRAR library under certain conditions as described in each
+ * individual source file, and distribute linked combinations
+ * including the two.
+ * You must obey the GNU General Public License in all respects
+ * for all of the code used other than OpenSSL.  If you modify
+ * file(s) with this exception, you may extend this exception to your
+ * version of the file(s), but you are not obligated to do so.  If you
+ * do not wish to do so, delete this exception statement from your
+ * version.  If you delete this exception statement from all source
+ * files in the program, then also delete it here.
 
 *******************************************************/
 
@@ -38,6 +51,7 @@
 #include <sys/stat.h>
 #include <unistd.h>
 #include <dlfcn.h>
+#include <errno.h>
 #endif
 
 
@@ -62,7 +76,7 @@ LVContainer * LVStorageObject::GetParentContainer()
     return NULL;
 }
 
-void LVStorageObject::SetName(const lChar16 * name)
+void LVStorageObject::SetName(const lChar16 *)
 {
 }
 
@@ -80,6 +94,25 @@ lvsize_t LVStorageObject::GetSize( )
 }
 
 
+/// calculate crc32 code for stream, if possible
+lverror_t LVNamedStream::crc32( lUInt32 & dst )
+{
+    if ( _crc!=0 ) {
+        dst = _crc;
+        return LVERR_OK;
+    } else {
+        if ( !_crcFailed ) {
+            lverror_t res = LVStream::crc32( dst );
+            if ( res==LVERR_OK ) {
+                _crc = dst;
+                return LVERR_OK;
+            }
+            _crcFailed = true;
+        }
+        dst = 0;
+        return LVERR_FAIL;
+    }
+}
 /// returns stream/container name, may be NULL if unknown
 const lChar16 * LVNamedStream::GetName()
 {
@@ -141,7 +174,7 @@ public:
         lvsize_t sz;
         if ( stream->GetSize(&sz)!=LVERR_OK )
             return res;
-        if ( pos<0 || pos + size > sz )
+        if ( pos + size > sz )
             return res; // wrong position/size
         LVDefStreamBuffer * buf = new LVDefStreamBuffer( stream, pos, size, readonly );
         if ( !buf->m_buf ) {
@@ -226,6 +259,39 @@ LVStreamBufferRef LVStream::GetWriteBuffer( lvpos_t pos, lvpos_t size )
     LVStreamBufferRef res = LVDefStreamBuffer::create( LVStreamRef(this), pos, size, false );
     return res;
 }
+
+
+#define CRC_BUF_SIZE 16384
+
+/// calculate crc32 code for stream, if possible
+lverror_t LVStream::crc32( lUInt32 & dst )
+{
+    dst = 0;
+    if ( GetMode() == LVOM_READ || GetMode() == LVOM_APPEND ) {
+        lvpos_t savepos = GetPos();
+        lvsize_t size = GetSize();
+        lUInt8 buf[CRC_BUF_SIZE];
+        SetPos( 0 );
+        lvsize_t bytesRead = 0;
+        for ( lvpos_t pos = 0; pos<size; pos+=CRC_BUF_SIZE ) {
+            lvsize_t sz = size - pos;
+            if ( sz > CRC_BUF_SIZE )
+                sz = CRC_BUF_SIZE;
+            Read( buf, sz, &bytesRead );
+            if ( bytesRead!=sz ) {
+                SetPos(savepos);
+                return LVERR_FAIL;
+            }
+            dst = lStr_crc32( dst, buf, sz );
+        }
+        SetPos( savepos );
+        return LVERR_OK;
+    } else {
+        // not supported
+        return LVERR_NOTIMPL;
+    }
+}
+
 
 //#if USE_MMAP_FILES==1
 #if defined(_LINUX) || defined(_WIN32)
@@ -321,8 +387,10 @@ public:
             newpos = m_size + offset;
             break;
         }
-        if ( newpos<0 || newpos>m_size )
+        if ( newpos>m_size )
             return LVERR_FAIL;
+        if ( pNewPos!=NULL )
+            *pNewPos = newpos;
         m_pos = newpos;
         return LVERR_OK;
     }
@@ -340,7 +408,7 @@ public:
 
     virtual lvpos_t SetPos(lvpos_t p)
     {
-        if ( p>=0 && p<=m_size ) {
+        if ( p<=m_size ) {
             m_pos = p;
             return m_pos;
         }
@@ -382,6 +450,7 @@ public:
 		}
 #else
 		if ( m_fd!= -1 ) {
+            CRLog::trace("Closing mapped file %s", UnicodeToUtf8(GetName()).c_str() );
 			UnMap();
             close(m_fd);
 		}
@@ -494,7 +563,7 @@ public:
 		);
 		if ( m_hMap==NULL ) {
 			DWORD err = GetLastError();
-            CRLog::error( "LVFileMappedStream::Map() -- Cannot map file to memory, err=%08x", err );
+            CRLog::error( "LVFileMappedStream::Map() -- Cannot map file to memory, err=%08x, hFile=%08x", err, (lUInt32)m_hFile );
             return error();
 		}
 		m_map = (lUInt8*) MapViewOfFile(
@@ -543,6 +612,7 @@ public:
 		return res;
 #else
         if ( m_map!=NULL && munmap( m_map, m_size ) == -1 ) {
+            m_map = NULL;
             CRLog::error("LVFileMappedStream::UnMap() -- Error while unmapping file");
             return error();
         }
@@ -608,8 +678,12 @@ public:
         m_mode = mode;
         if ( mode!=LVOM_READ && mode!=LVOM_APPEND )
             return LVERR_FAIL; // not supported
-        if ( mode==LVOM_APPEND && minSize<=0 )
-            return LVERR_FAIL;
+        if ( minSize==-1 ) {
+            if ( !LVFileExists(fname) )
+                return LVERR_FAIL;
+        }
+        //if ( mode==LVOM_APPEND && minSize<=0 )
+        //    return LVERR_FAIL;
         SetName(fname.c_str());
         lString8 fn8 = UnicodeToUtf8( fname );
 #if defined(_WIN32)
@@ -652,6 +726,8 @@ public:
 			if (err==ERROR_CALL_NOT_IMPLEMENTED)
 				m_hFile = CreateFileA( fn8.c_str(), m, s, NULL, c, FILE_ATTRIBUTE_NORMAL, NULL);
 			if ( (m_hFile == INVALID_HANDLE_VALUE) || (!m_hFile) ) {
+                CRLog::error("Error opening file %s", UnicodeToUtf8(fname).c_str() );
+                m_hFile = NULL;
 				// error
 				return error();
 			}
@@ -664,7 +740,7 @@ public:
             m_size |= (((lvsize_t)hw)<<32);
 #endif
 
-        if ( mode == LVOM_APPEND && m_size < minSize ) {
+        if ( minSize>=0 && mode == LVOM_APPEND && m_size < minSize ) {
             if ( SetSize( minSize ) != LVERR_OK ) {
                 CRLog::error( "Cannot set file size for %s", fn8.c_str() );
                 return error();
@@ -683,9 +759,9 @@ public:
         m_fd = -1;
 
         int flags = (mode==LVOM_READ) ? O_RDONLY : O_RDWR | O_CREAT;
-        m_fd = open( fn8.c_str(), flags, (mode_t)0600);
+        m_fd = open( fn8.c_str(), flags, (mode_t)0666);
         if (m_fd == -1) {
-            CRLog::error( "Error opening file %s for reading", fn8.c_str() );
+            CRLog::error( "Error opening file %s for %s, errno=%d, msg=%s", fn8.c_str(), (mode==LVOM_READ) ? "reading" : "read/write",  (int)errno, strerror(errno) );
             return error();
         }
         struct stat stat;
@@ -728,28 +804,6 @@ public:
 };
 #endif
 
-/// Open memory mapped file
-/**
-    \param pathname is file name to open (unicode)
-    \param mode is mode file should be opened in (LVOM_READ or LVOM_APPEND only)
-	\param minSize is minimum file size for R/W mode
-    \return reference to opened stream if success, NULL if error
-*/
-LVStreamRef LVMapFileStream( const lChar16 * pathname, lvopen_mode_t mode, lvsize_t minSize )
-{
-#if !defined(_WIN32) && !defined(_LINUX)
-	// STUB for systems w/o mmap
-    LVFileStream * stream = LVFileStream::CreateFileStream( fn, mode );
-    if ( stream!=NULL )
-    {
-        return LVStreamRef( stream );
-    }
-    return LVStreamRef();
-#else
-	LVFileMappedStream * stream = LVFileMappedStream::CreateFileStream( lString16(pathname), mode, (int)minSize );
-	return LVStreamRef(stream);
-#endif
-}
 
 /// Open memory mapped file
 /**
@@ -772,6 +826,7 @@ class LVFileStream : public LVNamedStream
 private:
     FILE * m_file;
 public:
+
 
     virtual lverror_t Seek( lvoffset_t offset, lvseek_origin_t origin, lvpos_t * pNewPos )
     {
@@ -798,7 +853,7 @@ public:
        CRLog::error("error setting file position to %d (%d)", (int)offset, (int)origin );
        return LVERR_FAIL;
     }
-    virtual lverror_t SetSize( lvsize_t size )
+    virtual lverror_t SetSize( lvsize_t )
     {
         /*
         int64 sz = m_file->SetSize( size );
@@ -1598,6 +1653,12 @@ public:
         }
     }
 
+    /// fastly return already known CRC
+    virtual lverror_t crc32( lUInt32 & dst )
+    {
+        return m_stream->crc32( dst );
+    }
+
     virtual bool Eof()
     {
         return m_pos >= m_size;
@@ -1622,7 +1683,7 @@ public:
             npos = m_size + offset;
             break;
         }
-        if (npos < 0 || npos > m_size)
+        if (npos > m_size)
             return LVERR_FAIL;
         m_pos = npos;
         if (newPos)
@@ -1873,6 +1934,13 @@ private:
             delete[] m_outbuf;
     }
 
+    /// Get stream open mode
+    /** \return lvopen_mode_t open mode */
+    virtual lvopen_mode_t GetMode()
+    {
+        return LVOM_READ;
+    }
+
     void zUninit()
     {
         if (!m_zInitialized)
@@ -1908,7 +1976,7 @@ private:
                     m_zstream.avail_in = 0;
                     return -1;
                 }
-                m_CRC = crc32( m_CRC, m_inbuf + tailpos, (int)(bytesRead) );
+                m_CRC = lStr_crc32( m_CRC, m_inbuf + tailpos, (int)(bytesRead) );
                 m_zstream.avail_in += (int)bytesRead;
                 m_inbytesleft -= bytesRead;
             }
@@ -2047,6 +2115,14 @@ private:
         return bytesRead;
     }
 public:
+
+    /// fastly return already known CRC
+    virtual lverror_t crc32( lUInt32 & dst )
+    {
+        dst = m_originalCRC;
+        return LVERR_OK;
+    }
+
     virtual bool Eof()
     {
         return m_outbytesleft==0; //m_pos >= m_size;
@@ -2080,7 +2156,7 @@ public:
             npos = m_unpacksize + offset;
             break;
         }
-        if (npos < 0 || npos > m_unpacksize)
+        if (npos > m_unpacksize)
             return LVERR_FAIL;
         if ( npos != currpos )
         {
@@ -3189,7 +3265,7 @@ public:
 			newpos = m_size + offset;
 			break;
 		}
-		if (newpos<0 || newpos>m_size)
+                if (newpos>m_size)
 			return LVERR_FAIL;
 		m_pos = newpos;
 		if (pNewPos)
@@ -3269,7 +3345,7 @@ public:
 	}
 	lverror_t Open( lUInt8 * pBuf, lvsize_t size )
 	{
-		if (!pBuf || size<0)
+                if (!pBuf)
 			return LVERR_FAIL;
 		m_own_buffer = false;
 		m_pBuffer = pBuf;
@@ -3384,7 +3460,7 @@ LVContainerRef LVOpenDirectory( const wchar_t * path, const wchar_t * mask )
 }
 
 /// Stream base class
-class LVTCRStream : public LVStream
+class LVTCRStream : public LVNamedStream
 {
     class TCRCode {
     public:
@@ -3427,8 +3503,10 @@ class LVTCRStream : public LVStream
     lUInt8 _readbuf[TCR_READ_BUF_SIZE];
     LVTCRStream( LVStreamRef stream )
     : _stream(stream), _index(NULL), _decoded(NULL),
-      _decodedSize(0), _decodedLen(0), _partIndex((unsigned)-1), _decodedStart(0), _indexSize(0), _pos(0) {
+      _decodedSize(0), _decodedLen(0), _partIndex((unsigned)-1), _decodedStart(0), _indexSize(0), _pos(0)
+    {
     }
+
     bool decodePart( unsigned index )
     {
         if ( _partIndex==index )
@@ -3573,7 +3651,7 @@ public:
             npos = _unpSize + offset;
             break;
         }
-        if (npos < 0 || npos >= _unpSize)
+        if (npos >= _unpSize)
             return LVERR_FAIL;
         _pos = npos;
         if ( _pos < _decodedStart || _pos >= _decodedStart + _decodedLen ) {
@@ -3634,7 +3712,7 @@ public:
         \param size is new file size
         \return lverror_t status: LVERR_OK if success
     */
-    virtual lverror_t SetSize( lvsize_t size )
+    virtual lverror_t SetSize( lvsize_t )
     {
         return LVERR_FAIL;
     }
@@ -3686,7 +3764,7 @@ public:
         \param nBytesWritten is place to store real number of bytes written to stream
         \return lverror_t status: LVERR_OK if success
     */
-    virtual lverror_t Write( const void * buf, lvsize_t count, lvsize_t * nBytesWritten )
+    virtual lverror_t Write( const void *, lvsize_t, lvsize_t *)
     {
         return LVERR_FAIL;
     }
@@ -3870,8 +3948,17 @@ void LVRemovePathDelimiter( lString16 & pathName )
 /// returns true if specified file exists
 bool LVFileExists( lString16 pathName )
 {
+#ifdef _WIN32
 	LVStreamRef stream = LVOpenFileStream( pathName.c_str(), LVOM_READ );
 	return !stream.isNull();
+#else
+    FILE * f = fopen(UnicodeToUtf8(pathName).c_str(), "rb");
+    if ( f ) {
+        fclose( f );
+        return true;
+    }
+    return false;
+#endif
 }
 
 /// returns true if specified directory exists
@@ -3914,5 +4001,40 @@ bool LVCreateDirectory( lString16 path )
     }
     CRLog::trace("Directory %s exists", UnicodeToUtf8(path).c_str());
     return true;
+}
+
+/// Open memory mapped file
+/**
+    \param pathname is file name to open (unicode)
+    \param mode is mode file should be opened in (LVOM_READ or LVOM_APPEND only)
+        \param minSize is minimum file size for R/W mode
+    \return reference to opened stream if success, NULL if error
+*/
+LVStreamRef LVMapFileStream( const lChar16 * pathname, lvopen_mode_t mode, lvsize_t minSize )
+{
+#if !defined(_WIN32) && !defined(_LINUX)
+        // STUB for systems w/o mmap
+    LVFileStream * stream = LVFileStream::CreateFileStream( pathname, mode );
+    if ( stream!=NULL )
+    {
+        return LVStreamRef( stream );
+    }
+    return LVStreamRef();
+#else
+        LVFileMappedStream * stream = LVFileMappedStream::CreateFileStream( lString16(pathname), mode, (int)minSize );
+        return LVStreamRef(stream);
+#endif
+}
+
+/// delete file, return true if file found and successfully deleted
+bool LVDeleteFile( lString16 filename )
+{
+#ifdef _WIN32
+    return DeleteFileW( filename.c_str() ) ? true : false;
+#else
+    if ( unlink( UnicodeToUtf8( filename ).c_str() ) )
+        return false;
+    return true;
+#endif
 }
 

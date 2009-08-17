@@ -125,7 +125,7 @@ private:
 public:
 #if (LDOM_USE_OWN_MEM_MAN == 1)
     static ldomMemManStorage * pmsHeap;
-    void * operator new( size_t size )
+    void * operator new( size_t )
     {
         if (pmsHeap == NULL)
         {
@@ -158,6 +158,8 @@ public:
 
 /// calculate cache record hash
 lUInt32 calcHash(css_style_rec_t & rec);
+/// calculate font instance record hash
+lUInt32 calcHash(font_ref_t & rec);
 /// calculate cache record hash
 inline lUInt32 calcHash(css_style_ref_t & rec) { return calcHash( *rec.get() ); }
 

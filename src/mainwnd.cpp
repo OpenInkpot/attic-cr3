@@ -176,6 +176,51 @@ V3DocViewWin::V3DocViewWin( CRGUIWindowManager * wm, lString16 dataDir )
     setAccelerators( _wm->getAccTables().get("main") );
 }
 
+/// on starting file loading
+void V3DocViewWin::OnLoadFileStart( lString16 filename )
+{
+}
+
+/// format detection finished
+void V3DocViewWin::OnLoadFileFormatDetected( doc_format_t fileFormat )
+{
+}
+
+/// file loading is finished successfully - drawCoveTo() may be called there
+void V3DocViewWin::OnLoadFileEnd()
+{
+}
+
+/// file progress indicator, called with values 0..100
+void V3DocViewWin::OnLoadFileProgress( int percent )
+{
+}
+
+/// document formatting started
+void V3DocViewWin::OnFormatStart()
+{
+}
+
+/// document formatting finished
+void V3DocViewWin::OnFormatEnd()
+{
+}
+
+/// format progress, called with values 0..100
+void V3DocViewWin::OnFormatProgress( int percent )
+{
+}
+
+/// file load finiished with error
+void V3DocViewWin::OnLoadFileError( lString16 message )
+{
+}
+
+/// Override to handle external links
+void V3DocViewWin::OnExternalLink( lString16 url, ldomNode * node )
+{
+}
+
 bool V3DocViewWin::loadDefaultCover( lString16 filename )
 {
     LVImageSourceRef cover = LVCreateFileCopyImageSource( filename.c_str() );
@@ -196,8 +241,11 @@ bool V3DocViewWin::loadCSS( lString16 filename )
         if ( !css.empty() ) {
             _docview->setStyleSheet( css );
             _css = css;
+            //CRLog::debug("Stylesheet found:\n%s", css.c_str() );
             return true;
         }
+    } else {
+        //CRLog::debug("Stylesheet file not found %s", UnicodeToUtf8(filename).c_str() );
     }
     return false;
 }
@@ -228,6 +276,7 @@ bool V3DocViewWin::saveHistory( LVStreamRef stream )
         CRLog::error("Cannot open history file for write" );
         return false;
     }
+    _docview->getHistory()->limit( 50 );
     return _docview->getHistory()->saveToStream( stream.get() );
 }
 
@@ -241,9 +290,10 @@ bool V3DocViewWin::loadHistory( lString16 filename )
 
 void V3DocViewWin::closing()
 {
-	CRLog::trace("V3DocViewWin::closing()");
+	CRLog::trace("V3DocViewWin::closing(), before docview->savePosition()");
 	_dict = NULL;
     _docview->savePosition();
+    CRLog::trace("after docview->savePosition()");
     saveHistory( lString16() );
 }
 
@@ -367,6 +417,7 @@ bool V3DocViewWin::saveSettings( lString16 filename )
 
 void V3DocViewWin::applySettings()
 {
+    showWaitIcon();
     CRPropRef delta = _props ^ _newProps;
     CRLog::trace( "applySettings() - %d options changed", delta->getCount() );
     _docview->propsApply( delta );
@@ -436,7 +487,9 @@ void V3DocViewWin::openRecentBook( int index )
         CRFileHistRecord * file = files.get( index );
         lString16 fn = file->getFilePathName();
         // TODO: check error
+        showWaitIcon();
         loadDocument( fn );
+        _docview->swapToCache();
     }
 }
 
@@ -773,6 +826,7 @@ bool V3DocViewWin::onCommand( int command, int params )
         return true;
     case DCMD_ZOOM_IN:
     case DCMD_ZOOM_OUT:
+        showWaitIcon();
 		CRViewDialog::onCommand( command, params );
         _props->setInt( PROP_FONT_SIZE, _docview->getFontSize() );
         saveSettings( lString16() );

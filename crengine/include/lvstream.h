@@ -7,6 +7,20 @@
     This source code is distributed under the terms of
     GNU General Public License.
     See LICENSE file for details.
+
+ * In addition, as a special exception, the copyright holders give
+ * permission to link the code of portions of this program with the
+ * UNRAR library under certain conditions as described in each
+ * individual source file, and distribute linked combinations
+ * including the two.
+ * You must obey the GNU General Public License in all respects
+ * for all of the code used other than OpenSSL.  If you modify
+ * file(s) with this exception, you may extend this exception to your
+ * version of the file(s), but you are not obligated to do so.  If you
+ * do not wish to do so, delete this exception statement from your
+ * version.  If you delete this exception statement from all source
+ * files in the program, then also delete it here.
+
 */
 
 
@@ -115,7 +129,7 @@ public:
 
     /// Set stream mode, supported not by all streams
     /** \return LVERR_OK if change is ok */
-    virtual lverror_t SetMode( lvopen_mode_t mode ) { return LVERR_NOTIMPL; }
+    virtual lverror_t SetMode( lvopen_mode_t ) { return LVERR_NOTIMPL; }
 
     /// Seek (change file pos)
     /**
@@ -240,6 +254,11 @@ public:
     /// writes array
     lverror_t Write( LVArray<lUInt32> & array );
 
+    /// calculate crc32 code for stream, if possible
+    virtual lverror_t crc32( lUInt32 & dst );
+    /// calculate crc32 code for stream, returns 0 for error or empty stream
+    inline lUInt32 crc32() { lUInt32 res = 0; crc32( res ); return res; }
+
     /// Constructor
     LVStream() { }
 
@@ -315,7 +334,10 @@ protected:
     lString16 m_filename;
     lString16 m_path;
     lvopen_mode_t          m_mode;
+    lUInt32 _crc;
+    bool _crcFailed;
 public:
+    LVNamedStream() : _crc(0), _crcFailed(false) { }
     /// returns stream/container name, may be NULL if unknown
     virtual const lChar16 * GetName();
     /// sets stream/container name, may be not implemented for some objects
@@ -325,6 +347,8 @@ public:
     {
         return m_mode;
     }
+    /// calculate crc32 code for stream, if possible
+    virtual lverror_t crc32( lUInt32 & dst );
 };
 
 
@@ -518,7 +542,7 @@ protected:
     LVContainer * m_parent;
     LVStreamRef m_stream;
 public:
-    virtual LVStreamRef OpenStream( const wchar_t * fname, lvopen_mode_t mode )
+    virtual LVStreamRef OpenStream( const wchar_t *, lvopen_mode_t )
     {
         return LVStreamRef();
     }
@@ -676,6 +700,8 @@ LVContainerRef LVOpenDirectory( const lChar16 * path, const wchar_t * mask = L"*
 
 /// Create directory if not exist
 bool LVCreateDirectory( lString16 path );
+/// delete file, return true if file found and successfully deleted
+bool LVDeleteFile( lString16 filename );
 
 /// copies content of in stream to out stream
 lvsize_t LVPumpStream( LVStreamRef out, LVStreamRef in );

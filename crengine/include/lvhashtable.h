@@ -40,7 +40,7 @@ public:
     };
 
 	class iterator {
-		friend class LVHashTable;
+        	friend class LVHashTable;
 		const LVHashTable & _tbl;
 		int index;
 		pair * ptr;
@@ -72,7 +72,7 @@ public:
 
 	iterator forwardIterator() const
 	{
-		return iterator(this);
+		return iterator(*this);
 	}
 
     LVHashTable( int size )
@@ -120,7 +120,7 @@ public:
             }
         }
         if (_table)
-            delete _table;
+            delete[] _table;
         _table = new_table;
         _size = nsize;
 

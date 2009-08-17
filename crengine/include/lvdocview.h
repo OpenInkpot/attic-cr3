@@ -3,7 +3,7 @@
 
     CoolReader Engine
 
-    (c) Vadim Lopatin, 2000-2006
+    (c) Vadim Lopatin, 2000-2009
 
     This source code is distributed under the terms of
     GNU General Public License.
@@ -199,7 +199,9 @@ enum LVDocCmd
     DCMD_TOGGLE_TEXT_FORMAT,
     DCMD_BOOKMARK_SAVE_N, // save current page bookmark under spicified number
     DCMD_BOOKMARK_GO_N,  // go to bookmark with specified number
-	DCMD_MOVE_BY_CHAPTER, // param=-1 - previous chapter, 1 = next chapter
+    DCMD_MOVE_BY_CHAPTER, // param=-1 - previous chapter, 1 = next chapter
+    DCMD_GO_SCROLL_POS,  // param=position of scroll bar slider
+    DCMD_TOGGLE_PAGE_SCROLL_VIEW,  // toggle paged/scroll view mode
 };
 #define LVDOCVIEW_COMMANDS_END DCMD_MOVE_BY_CHAPTER
 
@@ -294,11 +296,28 @@ public:
 
 //typedef lUInt64 LVPosBookmark;
 
-/// Callback interface 
+/// DocView Callback interface - track progress, external links, etc.
 class LVDocViewCallback {
 public:
+	/// on starting file loading
+	virtual void OnLoadFileStart( lString16 filename ) { }
+	/// format detection finished
+	virtual void OnLoadFileFormatDetected( doc_format_t fileFormat ) { }
+	/// file loading is finished successfully - drawCoveTo() may be called there
+	virtual void OnLoadFileEnd() { }
+	/// file progress indicator, called with values 0..100
+	virtual void OnLoadFileProgress( int percent ) { }
+	/// document formatting started
+	virtual void OnFormatStart() { }
+	/// document formatting finished
+	virtual void OnFormatEnd() { }
+	/// format progress, called with values 0..100
+	virtual void OnFormatProgress( int percent ) { }
+	/// file load finiished with error
+	virtual void OnLoadFileError( lString16 message ) { }
     /// Override to handle external links
-    virtual void OnExternalLink( lString16 url, ldomElement * node ) { }
+    virtual void OnExternalLink( lString16 url, ldomNode * node ) { }
+	/// destructor
     virtual ~LVDocViewCallback() { }
 };
 
@@ -381,7 +400,6 @@ private:
     ldomNavigationHistory _navigationHistory;
 
     doc_format_t m_doc_format;
-    txt_format_t m_text_format;
 
     LVDocViewCallback * m_callback;
 
@@ -389,6 +407,8 @@ private:
     CRPropRef m_props;
     // document properties
     CRPropRef m_doc_props;
+
+    bool m_swapDone;
 
     /// sets current document format
     void setDocFormat( doc_format_t fmt );
@@ -426,6 +446,9 @@ protected:
     /// set status bar and clock mode
     void setStatusMode( int newMode, bool showClock );
 public:
+    /// try swappping of document to cache, if size is big enough, and no swapping attempt yet done
+    void swapToCache();
+
     /// returns selected (marked) ranges
     ldomMarkedRangeList * getMarkedRanges() { return &m_markRanges; }
 
@@ -479,13 +502,13 @@ public:
     /// set text format options
     void setTextFormatOptions( txt_format_t fmt );
     /// get text format options
-    txt_format_t getTextFormatOptions() { return m_text_format; }
+    txt_format_t getTextFormatOptions();
     /// get current document format
     doc_format_t getDocFormat() { return m_doc_format; }
 
     // Links and selections functions
     /// sets selection for whole element, clears previous selection
-    virtual void selectElement( ldomElement * elem );
+    virtual void selectElement( ldomNode * elem );
     /// sets selection for range, clears previous selection
     virtual void selectRange( const ldomXRange & range );
     /// sets selection for list of words, clears previous selection
@@ -591,6 +614,8 @@ public:
     void setViewMode( LVDocViewMode view_mode, int visiblePageCount=-1 );
     /// get view mode (pages/scroll)
     LVDocViewMode getViewMode();
+    /// toggle pages/scroll view mode
+    void toggleViewMode();
     /// get window visible page count (1 or 2)
     int getVisiblePageCount();
     /// set window visible page count (1 or 2)
@@ -649,7 +674,7 @@ public:
     lString16 getAuthors() { return m_doc_props->getStringDef(DOC_PROP_AUTHORS); }
     /// returns book series name and number (series name #1)
     lString16 getSeries()
-    { 
+    {
         lString16 name = m_doc_props->getStringDef(DOC_PROP_SERIES_NAME);
         lString16 number = m_doc_props->getStringDef(DOC_PROP_SERIES_NUMBER);
         if ( !name.empty() && !number.empty() )
@@ -686,6 +711,8 @@ public:
 
     /// returns scrollbar control info
     const LVScrollInfo * getScrollInfo() { updateScroll(); return &m_scrollinfo; }
+    /// move to position specified by scrollbar
+    bool goToScrollPos( int pos );
     /// converts scrollbar pos to doc pos
     int scrollPosToDocPos( int scrollpos );
     /// returns position in 1/100 of percents
@@ -710,7 +737,7 @@ public:
     int  getStatusFontSize() { return m_status_font_size; }
     /// sets new status bar font size
     void setStatusFontSize( int newSize );
-	
+
     /// sets posible base font sizes (for ZoomFont)
     void setFontSizes( LVArray<int> & sizes, bool cyclic );
 
