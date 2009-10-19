@@ -1,3 +1,11 @@
+cr3 (3.0.22-1) asimov; urgency=low
+
+  * Merge from latest sourceforge CVS
+  * Fix TXT, HTML files support
+  * Implement external file links support.
+
+ -- Vadim Lopatin <vadim.lopatin@coolreader.org>  Mon, 19 Sep 2009 18:50:00 +0400
+
 cr3 (3.0.20-1) asimov; urgency=low
 
   * Merge from latest sourceforge CVS
