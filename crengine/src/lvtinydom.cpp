@@ -17,6 +17,7 @@
 #include "../include/lvtinydom.h"
 #include "../include/fb2def.h"
 #include "../include/lvrend.h"
+#include <stddef.h>
 
 //#define INDEX1 94
 //#define INDEX2 96
@@ -24,6 +25,7 @@
 //#define INDEX1 105
 //#define INDEX2 106
 
+#if BUILD_LITE!=1
 class ldomPersistentText;
 class ldomPersistentElement;
 
@@ -128,6 +130,11 @@ public :
     DataStorageItemHeader * alloc( int size );
     lUInt8 * ptr() { return _data; }
     int length() { return _len; }
+    void relocatePtr( ptrdiff_t addrDiff, int newSize )
+    {
+        _data += addrDiff;
+        _size = newSize;
+    }
 };
 
 DataStorageItemHeader * DataBuffer::alloc( int size )
@@ -140,7 +147,7 @@ DataStorageItemHeader * DataBuffer::alloc( int size )
     _len += size;
     return item;
 }
-
+#endif
 
 
 // moved to .cpp to hide implementation
@@ -240,7 +247,7 @@ public:
     }
     void operator delete( void * p )
     {
-        pmsREF->free((ldomMemBlock *)p);
+        pmsHeap->free((ldomMemBlock *)p);
     }
 #endif
     ldomText( ldomNode * parent, lUInt32 index, lString16 value )
@@ -261,7 +268,9 @@ public:
         _value = Utf8ToUnicode(value);
 #endif
     }
+#if BUILD_LITE!=1
     ldomText( ldomPersistentText * v );
+#endif
     virtual ~ldomText()
     {
         _document->unregisterNode( this );
@@ -328,8 +337,10 @@ public:
     }
     /// returns child node by index
     virtual ldomNode * getChildNode( lUInt32 ) const { return NULL; }
+#if BUILD_LITE!=1
     /// replace node with r/o persistent implementation
     virtual ldomNode * persist();
+#endif
 
     // stubs
 
@@ -345,6 +356,7 @@ public:
     virtual ldomNode * removeChild( lUInt32 ) { return NULL; }
 };
 
+#if BUILD_LITE!=1
 // persistent r/o instance of text
 class ldomPersistentText : public ldomNode
 {
@@ -368,7 +380,7 @@ public:
     }
     void operator delete( void * p )
     {
-        pmsREF->free((ldomMemBlock *)p);
+        pmsHeap->free((ldomMemBlock *)p);
     }
 #endif
     ldomPersistentText( ldomDocument * document, TextDataStorageItem * data )
@@ -436,7 +448,7 @@ public:
     /// remove child
     virtual ldomNode * removeChild( lUInt32 ) { return NULL; }
 };
-
+#endif
 
 
 // ldomElement declaration placed here to hide DOM implementation
@@ -471,7 +483,9 @@ public:
         pmsHeap->free((ldomMemBlock *)p);
     }
 #endif
+#if BUILD_LITE!=1
     ldomElement( ldomPersistentElement * v );
+#endif
     ldomElement( ldomDocument * document, ldomNode * parent, lUInt32 index, lUInt16 nsid, lUInt16 id )
     : ldomNode( document, parent, index ), _id(id), _nsid(nsid), _renderData(NULL), _rendMethod(erm_invisible)
     { }
@@ -542,8 +556,10 @@ public:
     virtual ldomNode * insertChildText( lString16 value );
     /// remove child
     virtual ldomNode * removeChild( lUInt32 index );
+#if BUILD_LITE!=1
     /// replace node with r/o persistent implementation
     virtual ldomNode * persist();
+#endif
 protected:
     /// override to avoid deleting children while replacing
     virtual void prepareReplace()
@@ -553,6 +569,7 @@ protected:
 };
 
 
+#if BUILD_LITE!=1
 
 // ldomElement declaration placed here to hide DOM implementation
 // use ldomNode rich interface instead
@@ -786,7 +803,9 @@ protected:
         getData()->childCount = 0;
     }
 };
+#endif
 
+#if BUILD_LITE!=1
 ldomText::ldomText( ldomPersistentText * v )
 : ldomNode( v )
 {
@@ -851,7 +870,7 @@ ldomNode * ldomPersistentText::modify()
 {
     return new ldomText( this );
 }
-
+#endif
 
 
 /*
@@ -888,8 +907,11 @@ simpleLogFile logfile("logfile.log");
 
 lxmlDocBase::lxmlDocBase( int dataBufSize )
 :
+#if BUILD_LITE!=1
   _dataBufferSize( dataBufSize ) // single data buffer size
-, _instanceMap(NULL)
+, 
+#endif
+_instanceMap(NULL)
 ,_instanceMapSize(2048) // *8 = 16K
 ,_instanceMapCount(1)
 ,_elementNameTable(MAX_ELEMENT_TYPE_ID)
@@ -902,14 +924,20 @@ lxmlDocBase::lxmlDocBase( int dataBufSize )
 ,_idNodeMap(1024)
 ,_idAttrId(0)
 ,_docProps(LVCreatePropsContainer())
+#if BUILD_LITE!=1
 ,_keepData(false)
 ,_mapped(false)
+#endif
 ,_docFlags(DOC_FLAG_DEFAULTS)
+#if BUILD_LITE!=1
 ,_pagesData(8192)
+#endif
 {
     // create and add one data buffer
+#if BUILD_LITE!=1
     _currentBuffer = new DataBuffer( _dataBufferSize );
     _dataBuffers.add( _currentBuffer );
+#endif
     _instanceMap = (NodeItem *)malloc( sizeof(NodeItem) * _instanceMapSize );
     memset( _instanceMap, 0, sizeof(NodeItem) * _instanceMapSize );
     _stylesheet.setDocument( this );
@@ -936,6 +964,7 @@ void lxmlDocBase::onAttributeSet( lUInt16 attrId, lUInt16 valueId, ldomNode * no
     }
 }
 
+#if BUILD_LITE!=1
 /// put all object into persistent storage
 void lxmlDocBase::persist()
 {
@@ -960,6 +989,7 @@ void lxmlDocBase::persist()
     }
 #endif
 }
+#endif
 
 /// used by object constructor, to assign ID for created object
 lInt32 lxmlDocBase::registerNode( ldomNode * node )
@@ -990,6 +1020,7 @@ void lxmlDocBase::unregisterNode( ldomNode * node )
     }
 }
 
+#if BUILD_LITE!=1
 /// used to create instances from mmapped file
 ldomNode * lxmlDocBase::setNode( lInt32 dataIndex, ldomNode * instance, DataStorageItemHeader * data )
 {
@@ -1050,6 +1081,7 @@ void lxmlDocBase::deleteNode( ldomNode * node )
         }
     }
 }
+#endif
 
 /// returns or creates object instance by index
 /*
@@ -1092,6 +1124,7 @@ lUInt16 lxmlDocBase::getElementNameIndex( const lChar16 * name )
 }
 
 
+#if BUILD_LITE!=1
 /// allocate data block, return pointer to allocated block
 DataStorageItemHeader * lxmlDocBase::allocData( lInt32 dataIndex, int size )
 {
@@ -1108,30 +1141,41 @@ DataStorageItemHeader * lxmlDocBase::allocData( lInt32 dataIndex, int size )
         if ( size >= _dataBufferSize )
             return NULL;
         if ( !_map.isNull() ) {
-            // already has map file
-            CRLog::error( "Too small swap file is reserved" );
-            crFatalError(10, "Swap file is too small. Cannot allocate additional data. Exiting.");
-        }
-
-        if ( (_dataBufferSize+1) * _dataBuffers.length() > DOCUMENT_CACHING_MAX_RAM_USAGE ) {
-            // swap to file
-            lUInt32 sz = getProps()->getIntDef( DOC_PROP_FILE_SIZE, 0 );
-            CRLog::info("Document data size is too big for RAM: swapping to disk, need to swap before allocating item %d[%d]", dataIndex, size);
-            if ( !swapToCache( sz * 3 ) ) {
-                CRLog::error( "Cannot swap big document to disk" );
-                crFatalError(10, "Swapping big document is failed. Exiting.");
+            if ( !resizeMap( hdr.data_offset + _dataBufferSize + _dataBufferSize / 4 +  size ) ) {
+                // already has map file
+                CRLog::error( "Too small swap file is reserved" );
+                crFatalError(10, "Swap file is too small. Cannot allocate additional data. Exiting.");
             }
             item = _currentBuffer->alloc( size );
         } else {
-            // add one another buffer in RAM
-            _currentBuffer = new DataBuffer( _dataBufferSize );
-            if ( _currentBuffer->isNull() ) {
-                CRLog::error("Cannot create document data buffer #%d (size=%d)", _dataBuffers.length(), _dataBufferSize );
-                delete _currentBuffer;
-                return NULL; // OUT OF MEMORY
+
+            lUInt32 nsz = _dataBufferSize * (_dataBuffers.length()+1);
+            if ( nsz > DOCUMENT_CACHING_MAX_RAM_USAGE ) {
+                // swap to file
+                lUInt32 sz = getProps()->getIntDef( DOC_PROP_FILE_SIZE, 0 ) + 0x8000;
+                CRLog::info("Document data size is too big for RAM: swapping to disk, need to swap before allocating item %d[%d]", dataIndex, size);
+                if ( nsz > sz )
+                    sz = nsz;
+#if BUILD_LITE!=1
+                if ( !swapToCache( sz ) ) {
+#endif
+                    CRLog::error( "Cannot swap big document to disk" );
+                    crFatalError(10, "Swapping big document is failed. Exiting.");
+#if BUILD_LITE!=1
+                }
+                item = _currentBuffer->alloc( size );
+#endif
+            } else {
+                // add one another buffer in RAM
+                _currentBuffer = new DataBuffer( _dataBufferSize );
+                if ( _currentBuffer->isNull() ) {
+                    CRLog::error("Cannot create document data buffer #%d (size=%d)", _dataBuffers.length(), _dataBufferSize );
+                    delete _currentBuffer;
+                    return NULL; // OUT OF MEMORY
+                }
+                _dataBuffers.add( _currentBuffer );
+                item = _currentBuffer->alloc( size );
             }
-            _dataBuffers.add( _currentBuffer );
-            item = _currentBuffer->alloc( size );
         }
     }
     item->dataIndex = dataIndex;
@@ -1169,7 +1213,9 @@ ElementDataStorageItem * lxmlDocBase::allocElement( lInt32 dataIndex, lInt32 par
     }
     return item;
 }
+#endif
 
+#if BUILD_LITE!=1
 lString16 lxmlDocBase::getTextNodeValue( lInt32 dataIndex )
 {
     // TODO: implement caching here
@@ -1220,14 +1266,17 @@ lString8 ldomPersistentText::getText8( lChar8 ) const
 {
     return ((lxmlDocBase*)_document)->getTextNodeValue8( _dataIndex );
 }
+#endif
 
 // memory pools
 #if (LDOM_USE_OWN_MEM_MAN==1)
 ldomMemManStorage * ldomElement::pmsHeap = NULL;
 ldomMemManStorage * ldomText::pmsHeap = NULL;
 ldomMemManStorage * lvdomElementFormatRec::pmsHeap = NULL;
+#if BUILD_LITE!=1
 ldomMemManStorage * ldomPersistentText::pmsHeap = NULL;
 ldomMemManStorage * ldomPersistentElement::pmsHeap = NULL;
+#endif
 #endif
 
 const lString16 & ldomNode::getAttributeValue( const lChar16 * nsName, const lChar16 * attrName ) const
@@ -1283,7 +1332,9 @@ lxmlDocBase::lxmlDocBase( lxmlDocBase & doc )
 ,   _idNodeMap(doc._idNodeMap)
 ,   _idAttrId(doc._idAttrId) // Id for "id" attribute name
 ,   _docFlags(doc._docFlags)
+#if BUILD_LITE!=1
 ,   _pagesData(8192)
+#endif
 {
 }
 
@@ -1391,7 +1442,9 @@ bool ldomDocument::saveToStream( LVStreamRef stream, const char * )
 
 ldomDocument::~ldomDocument()
 {
+#if BUILD_LITE!=1
     updateMap();
+#endif
     _keepData = true;
 }
 
@@ -1452,7 +1505,7 @@ int ldomDocument::render( LVRendPageList * pages, int width, int dy, bool showCo
         CRLog::trace("finalizing...");
         context.Finalize();
         updateRenderContext( pages, width, dy );
-        persist();
+        //persist();
         return height;
     } else {
         CRLog::info("rendering context is not changed - no render!");
@@ -1521,6 +1574,7 @@ void lxmlDocBase::dumpUnknownEntities( const char * fname )
     fclose(f);
 }
 
+#if BUILD_LITE!=1
 static const char * id_map_list_magic = "MAPS";
 static const char * elem_id_map_magic = "ELEM";
 static const char * attr_id_map_magic = "ATTR";
@@ -1599,6 +1653,7 @@ bool lxmlDocBase::deserializeMaps( SerialBuf & buf )
     buf.checkCRC( buf.pos() - pos );
     return !buf.error();
 }
+#endif
 
 /// returns node absolute rectangle
 void ldomNode::getAbsRect( lvRect & rect )
@@ -2339,6 +2394,43 @@ ldomXPointer ldomDocument::createXPointer( const lString16 & xPointerStr )
 }
 
 #if BUILD_LITE!=1
+
+/// return parent final node, if found
+ldomNode * ldomXPointer::getFinalNode() const
+{
+    ldomNode * node = getNode();
+    for (;;) {
+        if ( !node )
+            return NULL;
+        if ( node->getRendMethod()==erm_final )
+            return node;
+        node = node->getParentNode();
+    }
+}
+
+/// formats final block again after change, returns true if size of block is changed
+bool ldomNode::refreshFinalBlock()
+{
+    if ( getRendMethod() != erm_final )
+        return false;
+    // TODO: implement reformatting of one node
+    CVRendBlockCache & cache = getDocument()->getRendBlockCache();
+    cache.remove( this );
+    lvdomElementFormatRec * fmt = getRenderData();
+    if ( !fmt )
+        return false;
+    lvRect oldRect, newRect;
+    fmt->getRect( oldRect );
+    LFormattedTextRef txtform;
+    int width = fmt->getWidth();
+    int h = renderFinalBlock( txtform, width );
+    fmt->getRect( newRect );
+    if ( oldRect == newRect )
+        return false;
+    // TODO: relocate other blocks
+    return true;
+}
+
 /// formats final block
 int ldomNode::renderFinalBlock( LFormattedTextRef & txtform, int width )
 {
@@ -3620,6 +3712,254 @@ bool ldomXPointerEx::prevVisibleText()
     return false;
 }
 
+// TODO: implement better behavior
+static bool IsUnicodeSpace( lChar16 ch )
+{
+    return ch==' ';
+}
+
+/// move to previous visible word beginning
+bool ldomXPointerEx::prevVisibleWordStart()
+{
+    if ( isNull() )
+        return false;
+    ldomNode * node = NULL;
+    lString16 text;
+    int textLen = 0;
+    for ( ;; ) {
+        if ( !isText() || !isVisible() || _data->getOffset()==0 ) {
+            // move to previous text
+            if ( !prevVisibleText() )
+                return false;
+            node = getNode();
+            text = node->getText();
+            textLen = text.length();
+            _data->setOffset( textLen );
+        } else {
+            node = getNode();
+            text = node->getText();
+            textLen = text.length();
+        }
+        bool foundNonSpace = false;
+        while ( _data->getOffset() > 0 && IsUnicodeSpace(text[_data->getOffset()-1]) )
+            _data->addOffset(-1);
+        while ( _data->getOffset()>0 ) {
+            if ( IsUnicodeSpace(text[ _data->getOffset()-1 ]) )
+                break;
+            foundNonSpace = true;
+            _data->addOffset(-1);
+        }
+        if ( foundNonSpace )
+            return true;
+    }
+}
+
+/// move to previous visible word end
+bool ldomXPointerEx::prevVisibleWordEnd()
+{
+    if ( isNull() )
+        return false;
+    ldomNode * node = NULL;
+    lString16 text;
+    int textLen = 0;
+    bool moved = false;
+    for ( ;; ) {
+        if ( !isText() || !isVisible() || _data->getOffset()==0 ) {
+            // move to previous text
+            if ( !prevVisibleText() )
+                return false;
+            node = getNode();
+            text = node->getText();
+            textLen = text.length();
+            _data->setOffset( textLen );
+            moved = true;
+        } else {
+            node = getNode();
+            text = node->getText();
+            textLen = text.length();
+        }
+        // skip spaces
+        while ( _data->getOffset() > 0 && IsUnicodeSpace(text[_data->getOffset()-1]) ) {
+            _data->addOffset(-1);
+            moved = true;
+        }
+        if ( moved && _data->getOffset()>0 )
+            return true; // found!
+        // skip non-spaces
+        while ( _data->getOffset()>0 ) {
+            if ( IsUnicodeSpace(text[ _data->getOffset()-1 ]) )
+                break;
+            _data->addOffset(-1);
+        }
+        // skip spaces
+        while ( _data->getOffset() > 0 && IsUnicodeSpace(text[_data->getOffset()-1]) ) {
+            _data->addOffset(-1);
+            moved = true;
+        }
+        if ( moved && _data->getOffset()>0 )
+            return true; // found!
+    }
+}
+
+/// move to next visible word beginning
+bool ldomXPointerEx::nextVisibleWordStart()
+{
+    if ( isNull() )
+        return false;
+    ldomNode * node = NULL;
+    lString16 text;
+    int textLen = 0;
+    bool moved = false;
+    for ( ;; ) {
+        if ( !isText() || !isVisible() ) {
+            // move to previous text
+            if ( !nextVisibleText() )
+                return false;
+            node = getNode();
+            text = node->getText();
+            textLen = text.length();
+            _data->setOffset( 0 );
+            moved = true;
+        } else {
+            for (;;) {
+                node = getNode();
+                text = node->getText();
+                textLen = text.length();
+                if ( _data->getOffset() < textLen )
+                    break;
+                if ( !nextVisibleText() )
+                    return false;
+                _data->setOffset( 0 );
+            }
+        }
+        // skip spaces
+        while ( _data->getOffset()<textLen && IsUnicodeSpace(text[ _data->getOffset() ]) ) {
+            _data->addOffset(1);
+            moved = true;
+        }
+        if ( moved && _data->getOffset()<textLen )
+            return true;
+        // skip non-spaces
+        while ( _data->getOffset()<textLen ) {
+            if ( IsUnicodeSpace(text[ _data->getOffset() ]) )
+                break;
+            moved = true;
+            _data->addOffset(1);
+        }
+        // skip spaces
+        while ( _data->getOffset()<textLen && IsUnicodeSpace(text[ _data->getOffset() ]) ) {
+            _data->addOffset(1);
+            moved = true;
+        }
+        if ( moved && _data->getOffset()<textLen )
+            return true;
+    }
+}
+
+/// move to next visible word end
+bool ldomXPointerEx::nextVisibleWordEnd()
+{
+    if ( isNull() )
+        return false;
+    ldomNode * node = NULL;
+    lString16 text;
+    int textLen = 0;
+    bool moved = false;
+    for ( ;; ) {
+        if ( !isText() || !isVisible() ) {
+            // move to previous text
+            if ( !nextVisibleText() )
+                return false;
+            node = getNode();
+            text = node->getText();
+            textLen = text.length();
+            _data->setOffset( 0 );
+            moved = true;
+        } else {
+            for (;;) {
+                node = getNode();
+                text = node->getText();
+                textLen = text.length();
+                if ( _data->getOffset() < textLen )
+                    break;
+                if ( !nextVisibleText() )
+                    return false;
+                _data->setOffset( 0 );
+            }
+        }
+        bool nonSpaceFound = false;
+        // skip non-spaces
+        while ( _data->getOffset()<textLen ) {
+            if ( IsUnicodeSpace(text[ _data->getOffset() ]) )
+                break;
+            nonSpaceFound = true;
+            _data->addOffset(1);
+        }
+        if ( nonSpaceFound )
+            return true;
+        // skip spaces
+        while ( _data->getOffset()<textLen && IsUnicodeSpace(text[ _data->getOffset() ]) ) {
+            _data->addOffset(1);
+            moved = true;
+        }
+        // skip non-spaces
+        while ( _data->getOffset()<textLen ) {
+            if ( IsUnicodeSpace(text[ _data->getOffset() ]) )
+                break;
+            nonSpaceFound = true;
+            _data->addOffset(1);
+        }
+        if ( nonSpaceFound )
+            return true;
+    }
+}
+
+/// returns true if current position is visible word beginning
+bool ldomXPointerEx::isVisibleWordStart()
+{
+   if ( isNull() )
+        return false;
+    if ( !isText() || !isVisible() )
+        return false;
+    ldomNode * node = getNode();
+    lString16 text = node->getText();
+    int textLen = text.length();
+    int i = _data->getOffset();
+    if ( (i==0 && i<textLen && !IsUnicodeSpace(text[i])) || (i<textLen && IsUnicodeSpace(text[i-1]) && !IsUnicodeSpace(text[i]) ) )
+        return true;
+    return false;
+ }
+
+/// returns true if current position is visible word end
+bool ldomXPointerEx::isVisibleWordEnd()
+{
+   if ( isNull() )
+        return false;
+    if ( !isText() || !isVisible() )
+        return false;
+    ldomNode * node = getNode();
+    lString16 text = node->getText();
+    int textLen = text.length();
+    int i = _data->getOffset();
+    if ( (i==textLen && i>0 && !IsUnicodeSpace(text[i-1]))
+        || (i>0 && !IsUnicodeSpace(text[i-1]) && IsUnicodeSpace(text[i]) ) )
+        return true;
+    return false;
+}
+
+/// if start is after end, swap start and end
+void ldomXRange::sort()
+{
+    if ( _start.isNull() || _end.isNull() )
+        return;
+    if ( _start.compare(_end) > 0 ) {
+        ldomXPointer p1( _start );
+        ldomXPointer p2( _end );
+        _start = p2;
+        _end = p1;
+    }
+}
+
 /// backward iteration by elements of DOM three
 bool ldomXPointerEx::prevElement()
 {
@@ -3669,6 +4009,8 @@ void ldomXRange::forEach( ldomNodeCallback * callback )
     while ( !pos._start.isNull() && pos._start.compare( _end ) < 0 ) {
         // do something
         ldomNode * node = pos._start.getNode();
+        //lString16 path = pos._start.toString();
+        //CRLog::trace( "%s", UnicodeToUtf8(path).c_str() );
         if ( node->isElement() ) {
             allowGoRecurse = callback->onElement( &pos.getStart() );
         } else if ( node->isText() ) {
@@ -3686,12 +4028,17 @@ void ldomXRange::forEach( ldomNodeCallback * callback )
             allowGoRecurse = false;
         }
         // move to next item
+        bool stop = false;
         if ( !allowGoRecurse || !pos._start.child(0) ) {
             while ( !pos._start.nextSibling() ) {
-                if ( !pos._start.parent() )
+                if ( !pos._start.parent() ) {
+                    stop = true;
                     break;
+                }
             }
         }
+        if ( stop )
+            break;
     }
 }
 
@@ -4239,7 +4586,11 @@ ldomNode * ldomElement::insertChildText( lUInt32 index, lString16 value )
 {
     if (index>(lUInt32)_children.length())
         index = _children.length();
+#if BUILD_LITE!=1
     ldomPersistentText * text = new ldomPersistentText( this, index, value );
+#else
+    ldomText * text = new ldomText( this, index, value );
+#endif
     _children.insert( index, text->getDataIndex() );
 #if (LDOM_ALLOW_NODE_INDEX==1)
     // reindex tail
@@ -4252,7 +4603,11 @@ ldomNode * ldomElement::insertChildText( lUInt32 index, lString16 value )
 /// inserts child text
 ldomNode * ldomElement::insertChildText( lString16 value )
 {
+#if BUILD_LITE!=1
     ldomPersistentText * text = new ldomPersistentText( this, _children.length(), value );
+#else
+    ldomText * text = new ldomText( this, _children.length(), value );
+#endif
     _children.add( text->getDataIndex() );
     return text;
 }
@@ -4372,14 +4727,18 @@ void ldomFreeStorage()
     freeStorage( pmsREF );
     freeStorage( ldomElement::pmsHeap );
     freeStorage( ldomText::pmsHeap );
+#if BUILD_LITE!=1
     freeStorage( ldomPersistentText::pmsHeap );
+    freeStorage( ldomPersistentElement::pmsHeap );
+#endif
     freeStorage( lvdomElementFormatRec::pmsHeap );
     free_ls_storage();
 }
 #endif
 
 
-static const char * doc_file_magic = "CoolReader3 Document Cache File\nformat version 3.01.03\n";
+#if BUILD_LITE!=1
+static const char * doc_file_magic = "CoolReader3 Document Cache File\nformat version 3.01.04\n";
 
 
 bool ldomDocument::DocFileHeader::serialize( SerialBuf & hdrbuf )
@@ -4420,8 +4779,10 @@ bool ldomDocument::DocFileHeader::deserialize( SerialBuf & hdrbuf )
     }
     return true;
 }
+#endif
 
 #ifdef _DEBUG
+#if BUILD_LITE!=1
 
 
 bool testTreeConsistency( ldomNode * base, int & count, int * flags )
@@ -4486,7 +4847,7 @@ bool lxmlDocBase::checkConsistency( bool requirePersistent )
             dataIndexCount[ item->dataIndex ]++;
             textcount++;
             if ( _instanceMap[item->dataIndex].data != item ) {
-                CRLog::error( "Data pointer doesn't match for text %d", item->dataIndex);
+                CRLog::error( "Data pointer doesn't match for text %d, diff is %d  %p->%p", item->dataIndex, (int)((char *)_instanceMap[item->dataIndex].data - (char *)item), _instanceMap[item->dataIndex].data, item);
                 res = false;
             }
         } else 
@@ -4562,7 +4923,7 @@ bool lxmlDocBase::checkConsistency( bool requirePersistent )
     return res;
 }
 
-
+#endif
 #endif
 
 int ldomDocument::getPersistenceFlags()
@@ -4572,6 +4933,7 @@ int ldomDocument::getPersistenceFlags()
     return flag;
 }
 
+#if BUILD_LITE!=1
 bool ldomDocument::openFromCache( )
 {
     lString16 fname = getProps()->getStringDef( DOC_PROP_FILE_NAME, "noname" );
@@ -4643,7 +5005,8 @@ bool ldomDocument::openFromCache( )
 
     {
         _dataBuffers.clear();
-        _currentBuffer = new DataBuffer( ptr + hdr.data_offset, fileSize-hdr.data_offset, hdr.data_size );
+        _dataBufferSize = fileSize-hdr.data_offset;
+        _currentBuffer = new DataBuffer( ptr + hdr.data_offset, _dataBufferSize, hdr.data_size );
         _dataBuffers.add( _currentBuffer );
     }
     {
@@ -4689,6 +5052,37 @@ bool ldomDocument::openFromCache( )
     return true;
 }
 
+/// change size of memory mapped buffer
+bool ldomDocument::resizeMap( lvsize_t newSize )
+{
+    if ( !_mapped || !_mapbuf || !_mapped )
+        return false;
+    lUInt8 * oldptr = _mapbuf->getReadWrite();
+    _mapbuf.Clear();
+    if ( _map->SetSize( newSize )!=LVERR_OK ) {
+        _map.Clear();
+        _mapped = false;
+        CRLog::error("Error while resizing mmap file");
+        return false;
+    }
+    _mapbuf = _map->GetWriteBuffer(0, newSize);
+    lUInt8 * newptr = _mapbuf->getReadWrite();
+    ptrdiff_t diff = newptr - oldptr;
+    CRLog::debug("Relocating data pointers after mapped file resize: by %d (0x%x)  %p->%p", (int)(diff),(int)(diff), oldptr, newptr);
+    for (int i=0; i<_instanceMapCount; i++ ) {
+        if ( _instanceMap[ i ].data != NULL )
+            _instanceMap[ i ].data = (DataStorageItemHeader*) ( (lUInt8*)_instanceMap[ i ].data + diff );
+    }
+
+    _dataBufferSize = newSize-hdr.data_offset;
+    _currentBuffer->relocatePtr( diff, _dataBufferSize );
+
+    return true;
+    //_map = map; // memory mapped file
+    //_mapbuf = buf; // memory mapped file buffer
+    //_mapped = true;
+}
+
 bool ldomDocument::swapToCache( lUInt32 reservedSize )
 {
     lString16 fname = getProps()->getStringDef( DOC_PROP_FILE_NAME, "noname" );
@@ -4705,8 +5099,10 @@ bool ldomDocument::swapToCache( lUInt32 reservedSize )
     //testTreeConsistency( getRootNode() );
     CRLog::info("ldomDocument::swapToCache() - Started swapping of document %s to cache file", UnicodeToUtf8(fname).c_str() );
 
-    if ( !reservedSize )
-        persist();
+    //if ( !reservedSize )
+    //    persist(); //!!!
+
+
     //testTreeConsistency( getRootNode() );
 
     lvsize_t datasize = 0;
@@ -4795,7 +5191,8 @@ bool ldomDocument::swapToCache( lUInt32 reservedSize )
 
 
     //
-    _currentBuffer = new DataBuffer( ptr + hdr.data_offset, hdr.file_size - hdr.data_offset, hdr.data_size );
+    _dataBufferSize = hdr.file_size - hdr.data_offset;
+    _currentBuffer = new DataBuffer( ptr + hdr.data_offset, _dataBufferSize, hdr.data_size );
     _dataBuffers.clear();
     _dataBuffers.add( _currentBuffer );
     int elemcount = 0;
@@ -4906,7 +5303,7 @@ bool ldomDocument::updateMap()
     return true;
 }
 
-
+#endif
 
 static const char * doccache_magic = "CoolReader3 Document Cache Directory Index\nV1.00\n";
 
@@ -5171,6 +5568,7 @@ bool ldomDocCache::init( lString16 cacheDir, lvsize_t maxSize )
 {
     if ( _cacheInstance )
         delete _cacheInstance;
+    CRLog::info("Initialize document cache at %s (max size = %d)", UnicodeToUtf8(cacheDir).c_str(), (int)maxSize );
     _cacheInstance = new ldomDocCacheImpl( cacheDir, maxSize );
     if ( !_cacheInstance->init() ) {
         delete _cacheInstance;
@@ -5241,6 +5639,8 @@ void calcStyleHash( ldomNode * node, lUInt32 & value )
     }
 }
 
+#if BUILD_LITE!=1
+
 /// save document formatting parameters after render
 void ldomDocument::updateRenderContext( LVRendPageList * pages, int dx, int dy )
 {
@@ -5278,6 +5678,7 @@ bool ldomDocument::checkRenderContext( LVRendPageList * pages, int dx, int dy )
     return false;
 }
 
+#endif
 
 void lxmlDocBase::setStyleSheet( const char * css, bool replace )
 {

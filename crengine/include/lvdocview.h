@@ -30,12 +30,14 @@
 #define PROP_LOG_LEVEL               "crengine.log.level"
 #define PROP_LOG_AUTOFLUSH           "crengine.log.autoflush"
 #define PROP_FONT_SIZE               "crengine.font.size"
+#define PROP_STATUS_FONT_COLOR       "crengine.page.header.font.color"
 #define PROP_STATUS_FONT_FACE        "crengine.page.header.font.face"
 #define PROP_STATUS_FONT_SIZE        "crengine.page.header.font.size"
 #define PROP_PAGE_MARGIN_TOP         "crengine.page.margin.top"
 #define PROP_PAGE_MARGIN_BOTTOM      "crengine.page.margin.bottom"
 #define PROP_PAGE_MARGIN_LEFT        "crengine.page.margin.left"
 #define PROP_PAGE_MARGIN_RIGHT       "crengine.page.margin.right"
+#define PROP_PAGE_VIEW_MODE          "crengine.page.view.mode" // pages/scroll
 #define PROP_INTERLINE_SPACE         "crengine.interline.space"
 #define PROP_ROTATE_ANGLE            "window.rotate.angle"
 #define PROP_EMBEDDED_STYLES         "crengine.doc.embedded.styles.enabled"
@@ -44,6 +46,8 @@
 #define PROP_BOOKMARK_ICONS          "crengine.bookmarks.icons"
 #define PROP_FOOTNOTES               "crengine.footnotes"
 #define PROP_SHOW_TIME               "window.status.clock"
+#define PROP_SHOW_TITLE              "window.status.title"
+#define PROP_SHOW_BATTERY            "window.status.battery"
 #define PROP_FONT_KERNING_ENABLED    "font.kerning.enabled"
 #define PROP_LANDSCAPE_PAGES         "window.landscape.pages"
 #define PROP_HYPHENATION_DICT        "crengine.hyphenation.directory"
@@ -56,6 +60,8 @@ typedef enum {
     doc_format_rtf,
     doc_format_epub,
     doc_format_html,
+    doc_format_txt_bookmark, // coolreader TXT format bookmark
+    // don't forget update getDocFormatName() when changing this enum
 } doc_format_t;
 
 const lChar16 * getDocFormatName( doc_format_t fmt );
@@ -89,6 +95,7 @@ public:
 
 typedef LVRef<LVDocImageHolder> LVDocImageRef;
 
+/// page image cache
 class LVDocViewImageCache
 {
     private:
@@ -177,8 +184,8 @@ class LVDocViewImageCache
         }
 };
 
-/// LVDocView commands
 #define LVDOCVIEW_COMMANDS_START 100
+/// LVDocView commands
 enum LVDocCmd
 {
     DCMD_BEGIN = LVDOCVIEW_COMMANDS_START,
@@ -205,12 +212,14 @@ enum LVDocCmd
 };
 #define LVDOCVIEW_COMMANDS_END DCMD_MOVE_BY_CHAPTER
 
+/// document view mode: pages/scroll
 enum LVDocViewMode
 {
     DVM_SCROLL,
     DVM_PAGES,
 };
 
+/// document scroll position info
 class LVScrollInfo
 {
 public:
@@ -239,6 +248,7 @@ enum {
 class LVTocItem;
 class LVDocView;
 
+/// TOC item
 class LVTocItem
 {
 private:
@@ -410,6 +420,9 @@ private:
 
     bool m_swapDone;
 
+    /// edit cursor position
+    ldomXPointer m_cursorPos;
+
     /// sets current document format
     void setDocFormat( doc_format_t fmt );
 
@@ -444,8 +457,23 @@ protected:
     /// selects link on page, if any (delta==0 - current, 1-next, -1-previous). returns selected link range, null if no links.
     virtual ldomXRange * selectPageLink( int delta, bool wrapAround);
     /// set status bar and clock mode
-    void setStatusMode( int newMode, bool showClock );
+    void setStatusMode( int newMode, bool showClock, bool showTitle, bool showBattery );
+    /// create document and set flags
+    void createEmptyDocument();
+    /// get document rectangle for specified cursor position, returns false if not visible
+    bool getCursorDocRect( ldomXPointer ptr, lvRect & rc );
+    /// get screen rectangle for specified cursor position, returns false if not visible
+    bool getCursorRect( ldomXPointer ptr, lvRect & rc, bool scrollToCursor = false );
 public:
+    /// get screen rectangle for current cursor position, returns false if not visible
+    bool getCursorRect( lvRect & rc, bool scrollToCursor = false )
+    {
+        return getCursorRect( m_cursorPos, rc, scrollToCursor );
+    }
+    /// returns cursor position
+    ldomXPointer getCursorPos() { return m_cursorPos; }
+    /// set cursor position
+    void setCursorPos( ldomXPointer ptr ) { m_cursorPos = ptr; }
     /// try swappping of document to cache, if size is big enough, and no swapping attempt yet done
     void swapToCache();
 
@@ -457,7 +485,7 @@ public:
     /// render document, if not rendered
     void checkRender();
     /// saves current position to navigation history, to be able return back
-    void savePosToNavigationHistory();
+    bool savePosToNavigationHistory();
     /// returns pointer to bookmark/last position containter of currently opened file
     CRFileHistRecord * getCurrentFileHistRecord();
 	/// -1 moveto previous chapter, 0 to current chaoter first pae, 1 to next chapter
@@ -465,12 +493,16 @@ public:
 	/// -1 moveto previous page, 1 to next page
 	bool moveByPage( int delta );
 	/// saves new bookmark
-	bool saveRangeBookmark( ldomXRange & range, bmk_type type, lString16 comment );
+    CRBookmark * saveRangeBookmark( ldomXRange & range, bmk_type type, lString16 comment );
 	/// export bookmarks to text file
 	bool exportBookmarks( lString16 filename );
 	/// saves current page bookmark under numbered shortcut
-	void saveCurrentPageShortcutBookmark( int number );
-	/// restores page using bookmark by numbered shortcut
+    CRBookmark * saveCurrentPageShortcutBookmark( int number );
+    /// saves current page bookmark under numbered shortcut
+    CRBookmark * saveCurrentPageBookmark( lString16 comment );
+    /// removes bookmark from list, and deletes it, false if not found
+    bool removeBookmark( CRBookmark * bm );
+    /// restores page using bookmark by numbered shortcut
 	bool goToPageShortcutBookmark( int number );
     /// returns true if page image is available (0=current, -1=prev, 1=next)
     bool getShowCover() { return  m_showCover; }
@@ -528,7 +560,7 @@ public:
     /// returns selected link on page, if any. null if no links.
     virtual ldomXRange * getCurrentPageSelectedLink();
     /// follow link, returns true if navigation was successful
-    virtual bool goLink( lString16 href );
+    virtual bool goLink( lString16 href, bool savePos=true );
     /// follow selected link, returns true if navigation was successful
     virtual bool goSelectedLink();
     /// go back. returns true if navigation was successful

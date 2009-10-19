@@ -508,7 +508,6 @@ int main(int argc, char **argv)
 
         lString16 home = Utf8ToUnicode(lString8(( getenv("HOME") ) ));
         lString16 homecrengine = home + L"/.crengine/";
-        ldomDocCache::init( homecrengine + L".cache", 0x100000 * 64 ); /*96Mb*/
 
         lString8 home8 = UnicodeToUtf8( homecrengine );
         const char * keymap_locations [] = {

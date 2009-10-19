@@ -13,8 +13,13 @@
 #include <stdlib.h>
 #include "crsetup.h"
 
-typedef long int lInt32;            ///< signed 32 bit int
-typedef unsigned long int lUInt32;  ///< unsigned 32 bit int
+#ifdef _WIN32
+typedef long lInt32;            ///< signed 32 bit int
+typedef unsigned long lUInt32;  ///< unsigned 32 bit int
+#else
+typedef int lInt32;            ///< signed 32 bit int
+typedef unsigned int lUInt32;  ///< unsigned 32 bit int
+#endif
 
 typedef short int lInt16;           ///< signed 16 bit int
 typedef unsigned short int lUInt16; ///< unsigned 16 bit int
@@ -66,6 +71,8 @@ public:
     lvRect( int x0, int y0, int x1, int y1) : left(x0), top(y0), right(x1), bottom(y1) { }
     lvPoint topLeft() const { return lvPoint( left, top ); }
     lvPoint bottomRight() const { return lvPoint( right, bottom ); }
+    void setTopLeft( const lvPoint & pt ) { top=pt.y; left=pt.x; }
+    void setBottomRight( const lvPoint & pt ) { bottom=pt.y; right=pt.x; }
     /// returns true if rectangles are equal
     bool operator ==( const lvRect & rc ) const
     {

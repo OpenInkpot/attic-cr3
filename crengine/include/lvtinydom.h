@@ -84,6 +84,7 @@
 #define DOC_PROP_FILE_PATH       "doc.file.path"
 #define DOC_PROP_FILE_SIZE       "doc.file.size"
 #define DOC_PROP_FILE_FORMAT     "doc.file.format"
+#define DOC_PROP_FILE_FORMAT_ID  "doc.file.format.id"
 #define DOC_PROP_FILE_CRC32      "doc.file.crc32"
 #define DOC_PROP_CODE_BASE       "doc.file.code.base"
 
@@ -95,7 +96,7 @@ typedef LVCacheMap< ldomNode *, LFormattedTextRef> CVRendBlockCache;
 
 
 //#define LDOM_USE_OWN_MEM_MAN 0
-
+/// XPath step kind
 typedef enum {
 	xpath_step_error = 0, // error
 	xpath_step_element,   // element of type 'name' with 'index'        /elemname[N]/
@@ -105,12 +106,13 @@ typedef enum {
 } xpath_step_t;
 xpath_step_t ParseXPathStep( const lChar8 * &path, lString8 & name, int & index );
 
+#if BUILD_LITE!=1
 struct DataStorageItemHeader;
 struct TextDataStorageItem;
 struct ElementDataStorageItem;
 struct NodeItem;
 class DataBuffer;
-
+#endif
 
 // default: 512K
 #define DEF_DOC_DATA_BUFFER_SIZE 0x80000
@@ -141,10 +143,12 @@ public:
     /// Destructor
     virtual ~lxmlDocBase();
 
+#if BUILD_LITE!=1
 	/// serialize to byte array (pointer will be incremented by number of bytes written)
 	void serializeMaps( SerialBuf & buf );
 	/// deserialize from byte array (pointer will be incremented by number of bytes read)
 	bool deserializeMaps( SerialBuf & buf );
+#endif
 
     //======================================================================
     // Name <-> Id maps functions
@@ -281,21 +285,23 @@ public:
     inline CRPropRef getProps() { return _docProps; }
     /// returns doc properties collection
     void setProps( CRPropRef props ) { _docProps = props; }
-
+#if BUILD_LITE!=1
     /// put all object into persistent storage
     virtual void persist();
-
+#endif
     /// returns root element
     ldomNode * getRootNode();
 
     /// returns code base path relative to document container
     inline lString16 getCodeBase() { return getProps()->getStringDef(DOC_PROP_CODE_BASE, ""); }
     /// sets code base path relative to document container
-    inline void setCodeBase(lString16 codeBase) { getProps()->setStringDef(DOC_PROP_CODE_BASE, codeBase); }
+    inline void setCodeBase(const lString16 & codeBase) { getProps()->setStringDef(DOC_PROP_CODE_BASE, codeBase); }
 
 #ifdef _DEBUG
+#if BUILD_LITE!=1
     ///debug method, for DOM tree consistency check, returns false if failed
     bool checkConsistency( bool requirePersistent );
+#endif
 #endif
 
     inline bool getDocFlag( lUInt32 mask )
@@ -321,13 +327,14 @@ public:
         _docFlags = value;
     }
 
+#if BUILD_LITE!=1
     /// try opening from cache file, find by source file name (w/o path) and crc32
     virtual bool openFromCache( ) = 0;
     /// swap to cache file, find by source file name (w/o path) and crc32
     virtual bool swapToCache( lUInt32 reservedDataSize=0 ) = 0;
     /// saves recent changes to mapped file
     virtual bool updateMap() = 0;
-
+#endif
     /// returns or creates object instance by index
     inline ldomNode * getNodeInstance( lInt32 dataIndex )
     {
@@ -343,26 +350,38 @@ public:
     }
 protected:
 
-    
+#if BUILD_LITE!=1
+    virtual bool resizeMap( lvsize_t newSize ) = 0;
+#endif
+
 //=========================================
 //       NEW STORAGE MODEL METHODS
 //=========================================
     struct NodeItem {
         // object's RAM instance
         ldomNode * instance;
+#if BUILD_LITE!=1
         // object's data pointer
         DataStorageItemHeader * data;
+#endif
         // empty item constructor
-        NodeItem() : instance(NULL), data(NULL) { }
+        NodeItem() : instance(NULL)
+#if BUILD_LITE!=1
+, data(NULL) 
+#endif
+{ }
     };
+#if BUILD_LITE!=1
 	/// for persistent text node, return wide text by index, with caching (TODO)
     lString16 getTextNodeValue( lInt32 dataIndex );
 	/// for persistent text node, return utf8 text by index, with caching (TODO)
     lString8 getTextNodeValue8( lInt32 dataIndex );
+#endif
     /// used by object constructor, to assign ID for created object
     lInt32 registerNode( ldomNode * node );
     /// used by object destructor, to remove RAM reference; leave data as is
     void unregisterNode( ldomNode * node );
+#if BUILD_LITE!=1
     /// used by persistance management constructors, to replace one instance with another, deleting old instance
     ldomNode * replaceInstance( lInt32 dataIndex, ldomNode * newInstance );
     /// used to create instances from mmapped file, returns passed node instance
@@ -381,9 +400,10 @@ protected:
 	TextDataStorageItem * allocText( lInt32 dataIndex, lInt32 parentIndex, const lChar8 * text, int charCount );
 	/// allocate element
 	ElementDataStorageItem * allocElement( lInt32 dataIndex, lInt32 parentIndex, int attrCount, int childCount );
-
+#endif
     bool keepData() { return _keepData; }
 protected:
+#if BUILD_LITE!=1
     struct DocFileHeader {
         //char magic[16]; //== doc_file_magic
         lUInt32 src_file_size;
@@ -415,11 +435,13 @@ protected:
         }
     };
     DocFileHeader hdr;
+#endif
 
-
+#if BUILD_LITE!=1
     LVPtrVector<DataBuffer> _dataBuffers; // node data buffers
 	DataBuffer * _currentBuffer;
 	int _dataBufferSize;       // single data buffer size
+#endif
     NodeItem * _instanceMap;   // Id->Instance & Id->Data map
     int _instanceMapSize;      //
     int _instanceMapCount;     //
@@ -437,12 +459,16 @@ protected:
     CRPropRef _docProps;
     bool _keepData; // if true, node deletion will not change persistent data
 
+#if BUILD_LITE!=1
     LVStreamRef _map; // memory mapped file
     LVStreamBufferRef _mapbuf; // memory mapped file buffer
     bool _mapped; // true if document is mapped to file
+#endif
     lUInt32 _docFlags; // document flags
 
+#if BUILD_LITE!=1
     SerialBuf _pagesData;
+#endif
 };
 
 /*
@@ -643,7 +669,7 @@ public:
 
     // rich interface stubs for supporting Element operations
     /// returns rendering method
-    virtual lvdom_element_render_method  getRendMethod() { return erm_invisible; }
+    virtual lvdom_element_render_method getRendMethod() { return erm_invisible; }
     /// sets rendering method
     virtual void setRendMethod( lvdom_element_render_method ) { }
     /// returns element style record
@@ -684,6 +710,8 @@ public:
     LVImageSourceRef getObjectImageSource();
     /// formats final block
     int renderFinalBlock(  LFormattedTextRef & frmtext, int width );
+    /// formats final block again after change, returns true if size of block is changed
+    bool refreshFinalBlock();
 #endif
     /// replace node with r/o persistent implementation
     virtual ldomNode * persist() { return this; }
@@ -725,7 +753,7 @@ protected:
 		// clone
 		XPointerData( const XPointerData & v )  : _doc(v._doc), _dataIndex(v._dataIndex), _offset(v._offset), _refCount(1) { }
 		inline ldomDocument * getDocument() { return _doc; }
-		inline bool operator == (const XPointerData & v) const
+        inline bool operator == (const XPointerData & v) const
 		{
 			return _doc==v._doc && _dataIndex == v._dataIndex && _offset == v._offset;
 		}
@@ -747,7 +775,8 @@ protected:
 			}
 		}
 		inline void setOffset( int offset ) { _offset = offset; }
-		~XPointerData() { }
+        inline void addOffset( int offset ) { _offset+=offset; }
+        ~XPointerData() { }
 	};
 	/// node pointer
 	//ldomNode * _node;
@@ -760,10 +789,16 @@ protected:
 	}
 public:
 	XPointerData * _data;
-	/// 
+    /// clear pointer (make null)
+    void clear() { *this = ldomXPointer(); }
+    /// return document
 	inline ldomDocument * getDocument() { return _data->getDocument(); }
     /// returns node pointer
 	inline ldomNode * getNode() const { return _data->getNode(); }
+#if BUILD_LITE!=1
+    /// return parent final node, if found
+    ldomNode * getFinalNode() const;
+#endif
     /// returns offset within node
 	inline int getOffset() const { return _data->getOffset(); }
 	/// set pointer node
@@ -926,6 +961,11 @@ public:
             _indexes[ i ] = v._indexes[i];
         return *this;
     }
+    /// returns true if ranges are equal
+    bool operator == ( const ldomXPointerEx & v ) const
+    {
+        return _data->getDocument()==v._data->getDocument() && _data->getNode()==v._data->getNode() && _data->getOffset()==v._data->getOffset();
+    }
     /// searches path for element with specific id, returns level at which element is founs, 0 if not found
     int findElementInPath( lUInt16 id );
     /// compare two pointers, returns -1, 0, +1
@@ -972,6 +1012,18 @@ public:
     bool nextVisibleText();
     /// move to previous visible text node
     bool prevVisibleText();
+    /// move to previous visible word beginning
+    bool prevVisibleWordStart();
+    /// move to previous visible word end
+    bool prevVisibleWordEnd();
+    /// move to next visible word beginning
+    bool nextVisibleWordStart();
+    /// move to next visible word end
+    bool nextVisibleWordEnd();
+    /// returns true if current position is visible word beginning
+    bool isVisibleWordStart();
+    /// returns true if current position is visible word end
+    bool isVisibleWordEnd();
     /// forward iteration by elements of DOM three
     bool nextElement();
     /// backward iteration by elements of DOM three
@@ -1067,6 +1119,8 @@ public:
         : _start( word.getStartXPointer() ), _end( word.getEndXPointer() ), _flags(1)
     {
     }
+    /// if start is after end, swap start and end
+    void sort();
     /// create intersection of two ranges
     ldomXRange( const ldomXRange & v1,  const ldomXRange & v2 );
     /// copy constructor of full node range
@@ -1077,6 +1131,11 @@ public:
         _start = v._start;
         _end = v._end;
         return *this;
+    }
+    /// returns true if ranges are equal
+    bool operator == ( const ldomXRange & v ) const
+    {
+        return _start == v._start && _end == v._end && _flags==v._flags;
     }
     /// returns true if interval is invalid or empty
     bool isNull()
@@ -1231,11 +1290,17 @@ class ldomNavigationHistory
             _links.clear();
             _pos = 0;
         }
-        void save( lString16 link )
+        bool save( lString16 link )
         {
-            clearTail();
-            _links.add( link );
-            _pos = _links.length();
+            if (_pos==_links.length() && _pos>0 && _links[_pos-1]==link )
+                return false;
+            if ( _pos>=_links.length() || _links[_pos]!=link ) {
+                clearTail();
+                _links.add( link );
+                _pos = _links.length();
+                return true;
+            }
+            return false;
         }
         lString16 back()
         {
@@ -1245,9 +1310,9 @@ class ldomNavigationHistory
         }
         lString16 forward()
         {
-            if (_pos>=(int)_links.length())
+            if (_pos>=(int)_links.length()-1)
                 return lString16();
-            return _links[_pos++];
+            return _links[++_pos];
         }
         int backCount()
         {
@@ -1279,19 +1344,27 @@ protected:
     /// uniquie id of file format parsing option (usually 0, but 1 for preformatted text files)
     int getPersistenceFlags();
 
+#if BUILD_LITE!=1
+    /// change size of memory mapped buffer
+    virtual bool resizeMap( lvsize_t newSize );
+#endif
 public:
 
+#if BUILD_LITE!=1
     /// save document formatting parameters after render
     void updateRenderContext( LVRendPageList * pages, int dx, int dy );
     /// check document formatting parameters before render - whether we need to reformat; returns false if render is necessary
     bool checkRenderContext( LVRendPageList * pages, int dx, int dy );
+#endif
 
+#if BUILD_LITE!=1
     /// try opening from cache file, find by source file name (w/o path) and crc32
     virtual bool openFromCache( );
     /// swap to cache file, find by source file name (w/o path) and crc32
     virtual bool swapToCache( lUInt32 reservedDataSize=0 );
     /// saves recent changes to mapped file
     virtual bool updateMap();
+#endif
 
 
     LVContainerRef getContainer() { return _container; }
