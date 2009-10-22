@@ -394,7 +394,8 @@ void LVDocView::clearImageCache()
 void LVDocView::requestRender()
 {
     m_is_rendered = false;
-    m_imageCache.clear();
+    clearImageCache();
+    m_doc->clearRendBlockCache();
 }
 
 /// render document, if not rendered
@@ -2314,6 +2315,7 @@ void LVDocView::SetRotateAngle( cr_rotate_angle_t angle )
 {
     if ( m_rotateAngle==angle )
         return;
+    m_props->setInt( PROP_ROTATE_ANGLE, ((int)angle) & 3 );
     m_imageCache.clear();
     LVLock lock(getMutex());
     if ( (m_rotateAngle & 1) == (angle & 1) ) {
@@ -2465,6 +2467,12 @@ bool LVDocView::LoadDocument( const lChar16 * fname )
     Clear();
 
     // split file path and name
+    lString16 filename16( fname );
+    lString16 fn = LVExtractFilename( filename16 );
+    lString16 dir = LVExtractPath( filename16 );
+
+    CRLog::info( "Loading document %s : fn=%s, dir=%s", LCSTR(filename16), LCSTR(fn), LCSTR(dir) );
+#if 0
     int i;
     int last_slash = -1;
     lChar16 slash_char = 0;
@@ -2482,6 +2490,8 @@ bool LVDocView::LoadDocument( const lChar16 * fname )
     else
         dir = lString16( fname, last_slash );
     lString16 fn( fname + last_slash + 1 );
+#endif
+
     m_doc_props->setString(DOC_PROP_FILE_PATH, dir);
     m_container = LVOpenDirectory(dir.c_str());
     if ( m_container.isNull() )
@@ -2829,6 +2839,7 @@ bool LVDocView::LoadDocument( LVStreamRef stream )
                     if ( !item->IsContainer() )
                     {
                         lString16 name( item->GetName() );
+                        CRLog::debug("arc item[%d] : %s", i, LCSTR(name) );
                         lString16 s = name;
                         s.lowercase();
                         bool nameIsOk = true;
@@ -2872,6 +2883,7 @@ bool LVDocView::LoadDocument( LVStreamRef stream )
             if ( !fn.empty() ) {
                 m_stream = m_arc->OpenStream( fn.c_str(), LVOM_READ );
                 if ( !m_stream.isNull() ) {
+                    CRLog::debug("Opened archive stream %s", LCSTR(fn) );
                     m_doc_props->setString(DOC_PROP_FILE_NAME, fn);
                     m_doc_props->setString(DOC_PROP_CODE_BASE, LVExtractPath(fn) );
                     m_doc_props->setString(DOC_PROP_FILE_SIZE, lString16::itoa((int)m_stream->GetSize()));
@@ -3055,10 +3067,13 @@ bool LVDocView::ParseDocument( )
 
     if ( m_stream->GetSize() > DOCUMENT_CACHING_SIZE_THRESHOLD ) {
         // try loading from cache
-        lString16 fn( m_stream->GetName() );
+
+        //lString16 fn( m_stream->GetName() );
+        lString16 fn = m_doc_props->getStringDef(DOC_PROP_FILE_NAME, "untitled" );
         fn = LVExtractFilename( fn );
         lUInt32 crc = 0;
         m_stream->crc32( crc );
+        CRLog::debug("Check whether document %s crc %08x exists in cache", UnicodeToUtf8(fn).c_str(), crc );
 
 	    // set stylesheet
         m_doc->setStyleSheet( m_stylesheet.c_str(), true );
@@ -4008,6 +4023,25 @@ void LVDocView::doCommand( LVDocCmd cmd, int param )
             selectPrevPageLink(true);
         }
         break;
+    case DCMD_LINK_FIRST:
+        {
+            selectFirstPageLink();
+        }
+        break;
+    case DCMD_ROTATE_BY: // rotate view, param =  +1 - clockwise, -1 - counter-clockwise
+        {
+            int a = (int)m_rotateAngle;
+            if ( param==0 )
+                param = 1;
+            a = (a + param) & 3;
+            SetRotateAngle( (cr_rotate_angle_t)(a) );
+        }
+        break;
+    case DCMD_ROTATE_SET: // rotate viewm param = 0..3 (0=normal, 1=90`, ...)
+        {
+            SetRotateAngle( (cr_rotate_angle_t)(param & 3 ) );
+        }
+        break;
     case DCMD_LINK_GO:
         {
             goSelectedLink();
@@ -4285,8 +4319,11 @@ CRPropRef LVDocView::propsApply( CRPropRef props )
 			HyphDictionary * curr = HyphMan::getSelectedDictionary();
 			if ( list ) {
 				if ( !curr || curr->getId()!=id ) {
-					if ( list->activate( id ) )
-						requestRender();
+                    //if (
+                    CRLog::debug("Changing hyphenation to %s", LCSTR(id));
+                    list->activate( id );
+                    //)
+                    requestRender();
 				}
 			}
         } else if ( name==PROP_INTERLINE_SPACE ) {
